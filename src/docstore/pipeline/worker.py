@@ -12,6 +12,12 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from docstore.converters import ConverterRegistry, load_converters_config
 from docstore.core.config import load_config
 from docstore.core.logging import configure_logging, get_logger
+from docstore.llm import (
+    DocumentAnalyzer,
+    PromptLibrary,
+    build_llm_provider,
+    load_llm_config,
+)
 from docstore.pipeline.queue import redis_settings
 from docstore.pipeline.tasks import ingest_document
 from docstore.storage import MinioStore, OpenSearchStore
@@ -28,12 +34,19 @@ async def on_startup(ctx: dict[str, Any]) -> None:
     opensearch = OpenSearchStore(config.opensearch)
     minio = MinioStore(config.minio)
     converters = ConverterRegistry(load_converters_config())
+    llm_config = load_llm_config()
+    analyzer = DocumentAnalyzer(
+        build_llm_provider(llm_config),
+        PromptLibrary(),
+        max_input_chars=llm_config.max_input_chars,
+    )
     await opensearch.bootstrap()
     await minio.bootstrap()
     ctx["config"] = config
     ctx["opensearch"] = opensearch
     ctx["minio"] = minio
     ctx["converters"] = converters
+    ctx["analyzer"] = analyzer
     _log.info("worker_ready")
 
 
@@ -44,6 +57,9 @@ async def on_shutdown(ctx: dict[str, Any]) -> None:
     converters: ConverterRegistry | None = ctx.get("converters")
     if converters is not None:
         await converters.aclose()
+    analyzer: DocumentAnalyzer | None = ctx.get("analyzer")
+    if analyzer is not None:
+        await analyzer.aclose()
     _log.info("worker_stopped")
 
 

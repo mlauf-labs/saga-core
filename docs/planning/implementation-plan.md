@@ -96,15 +96,21 @@ Coverage 94%.
 
 ---
 
-## Phase 4 — LLM analysis & metadata extraction
+## Phase 4 — LLM analysis & metadata extraction ✅
 
 **Goal:** classification, value extraction, hierarchical categorisation.
 
-- ☐ Provider abstraction + Ollama/OpenAI/Azure adapters (LLM + embeddings) via config.
-- ☐ Prompt loader/renderer reading `prompts/*.md`.
-- ☐ Structured outputs → validated Pydantic models; confidence/failure flagging.
-- ☐ Worker stages: classify, extract values, categorise → write metadata + folder_structure.
-- ☐ Unit tests with recorded/mocked LLM responses.
+- ☑ LLM provider abstraction + Ollama/OpenAI/Azure adapters via config (FR-33).
+      (Embedding adapters follow in Phase 5.)
+- ☑ Prompt loader/renderer reading `prompts/analysis/*.md` (NFR-30).
+- ☑ Structured outputs → validated Pydantic models; robust JSON extraction;
+      per-field confidence; malformed responses raise actionable `AnalysisError`.
+- ☑ Worker stage: classify → extract values → categorise → write metadata +
+      folder_structure; status `analyzing` between conversion and ready.
+- ☑ Unit tests with scripted/mocked LLM responses + mocked SDK clients.
+
+Delivered: `llm/{config,providers,schemas,analyzer}.py`, `pipeline/stages.analyze_metadata`,
+`OpenSearchStore.update_metadata`; providers wired into the worker. Coverage 94%.
 
 **Satisfies:** FR-5, FR-14..18, FR-33; NFR-30, NFR-34.
 

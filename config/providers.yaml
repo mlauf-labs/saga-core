@@ -10,15 +10,15 @@ llm:
       model: ${OLLAMA_LLM_MODEL:-llama3.1:8b}
       temperature: 0.0
     openai:
-      api_key: ${OPENAI_API_KEY}
+      api_key: ${OPENAI_API_KEY:-}
       model: ${OPENAI_LLM_MODEL:-gpt-4o-mini}
       base_url: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       temperature: 0.0
     azure:
-      api_key: ${AZURE_OPENAI_API_KEY}
-      endpoint: ${AZURE_OPENAI_ENDPOINT}
+      api_key: ${AZURE_OPENAI_API_KEY:-}
+      endpoint: ${AZURE_OPENAI_ENDPOINT:-}
       api_version: ${AZURE_OPENAI_API_VERSION:-2024-10-21}
-      deployment: ${AZURE_OPENAI_LLM_DEPLOYMENT}
+      deployment: ${AZURE_OPENAI_LLM_DEPLOYMENT:-}
       temperature: 0.0
 
 embeddings:
@@ -30,13 +30,13 @@ embeddings:
       model: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
       dimension: 768
     openai:
-      api_key: ${OPENAI_API_KEY}
+      api_key: ${OPENAI_API_KEY:-}
       model: ${OPENAI_EMBED_MODEL:-text-embedding-3-small}
       base_url: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       dimension: 1536
     azure:
-      api_key: ${AZURE_OPENAI_API_KEY}
-      endpoint: ${AZURE_OPENAI_ENDPOINT}
+      api_key: ${AZURE_OPENAI_API_KEY:-}
+      endpoint: ${AZURE_OPENAI_ENDPOINT:-}
       api_version: ${AZURE_OPENAI_API_VERSION:-2024-10-21}
-      deployment: ${AZURE_OPENAI_EMBED_DEPLOYMENT}
+      deployment: ${AZURE_OPENAI_EMBED_DEPLOYMENT:-}
       dimension: 1536
