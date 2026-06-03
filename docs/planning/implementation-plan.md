@@ -55,16 +55,21 @@ delete (FR-26); 95% coverage on implemented code.
 
 ---
 
-## Phase 2 — REST API (document management)
+## Phase 2 — REST API (document management) ✅
 
 **Goal:** manage documents over HTTP with auth + Swagger.
 
-- ☐ FastAPI app, Bearer auth dependency, error handlers (actionable messages).
-- ☐ Endpoints: upload (202 + job), get, list (paginated), delete, status.
-- ☐ Update = delete + re-create.
-- ☐ Swagger UI toggle; OpenAPI metadata.
-- ☐ Upload validation (size, content-type), content-hash dedup.
-- ☐ Unit + API tests (httpx test client).
+- ☑ FastAPI app, Bearer auth dependency, error handlers (actionable messages).
+- ☑ Endpoints: upload (202 + job), get, list (paginated), delete, status.
+- ☑ Update = delete + re-create.
+- ☑ Swagger UI toggle; OpenAPI metadata.
+- ☑ Upload validation (size, empty), content-hash dedup (reject/replace/allow).
+- ☑ API tests (TestClient) with injectable in-memory services.
+
+Delivered: `api/app.py` (lifespan + DI), `api/dependencies.py` (Services container +
+auth, store Protocols), `api/errors.py` (DocStoreError → HTTP), `api/schemas.py`,
+`api/service.py` (ingest/dedup/replace logic), `api/routes/documents.py`. See
+[`../api/rest-api.md`](../api/rest-api.md). Coverage 94%.
 
 **Satisfies:** FR-1, FR-2, FR-10, FR-11, FR-12, FR-13, FR-28; NFR-13, NFR-18..20, NFR-29.
 

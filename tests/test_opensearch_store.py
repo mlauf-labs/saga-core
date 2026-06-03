@@ -152,6 +152,43 @@ async def test_hybrid_search_parses_hits(store: OpenSearchStore, fake_client: Ma
     assert hits[0].score == 1.5
 
 
+async def test_find_by_hash_found(store: OpenSearchStore, fake_client: MagicMock) -> None:
+    fake_client.search.return_value = {
+        "hits": {"hits": [{"_source": _make_document().model_dump(mode="json")}]}
+    }
+    found = await store.find_by_hash("h")
+    assert found is not None
+    assert found.document_id == "d1"
+
+
+async def test_find_by_hash_none(store: OpenSearchStore, fake_client: MagicMock) -> None:
+    fake_client.search.return_value = {"hits": {"hits": []}}
+    assert await store.find_by_hash("nope") is None
+
+
+async def test_list_documents_total_dict(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    fake_client.search.return_value = {
+        "hits": {
+            "total": {"value": 5},
+            "hits": [{"_source": _make_document().model_dump(mode="json")}],
+        }
+    }
+    docs, total = await store.list_documents(page=1, page_size=10)
+    assert total == 5
+    assert len(docs) == 1
+
+
+async def test_list_documents_total_int(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    fake_client.search.return_value = {"hits": {"total": 2, "hits": []}}
+    docs, total = await store.list_documents(page=2, page_size=10)
+    assert total == 2
+    assert docs == []
+
+
 async def test_close(store: OpenSearchStore, fake_client: MagicMock) -> None:
     await store.close()
     fake_client.close.assert_awaited_once()

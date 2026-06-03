@@ -73,7 +73,7 @@ src = ["src", "tests"]
 select = ["E", "F", "I", "UP", "B", "C4", "SIM", "TC", "RUF", "ANN", "ASYNC"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["ANN", "S101"]
+"tests/**" = ["ANN", "S101", "TC"]
 
 [tool.ruff.lint.flake8-type-checking]
 # Pydantic evaluates annotations at runtime, so don't push their imports into
