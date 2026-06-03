@@ -152,6 +152,28 @@ async def test_hybrid_search_parses_hits(store: OpenSearchStore, fake_client: Ma
     assert hits[0].score == 1.5
 
 
+async def test_update_content(store: OpenSearchStore, fake_client: MagicMock) -> None:
+    await store.update_content("d1", "# Markdown")
+    body = fake_client.update.await_args.kwargs["body"]
+    assert body["doc"]["content_markdown"] == "# Markdown"
+
+
+async def test_update_metadata(store: OpenSearchStore, fake_client: MagicMock) -> None:
+    from docstore.core.models import ExtractedValue
+
+    await store.update_metadata(
+        "d1",
+        doc_type="invoice",
+        extracted_values=[ExtractedValue(key="n", type="identifier", value="1")],
+        folder_structure=["Finance/Invoices"],
+        category_paths=["Finance/Invoices"],
+    )
+    body = fake_client.update.await_args.kwargs["body"]
+    assert body["doc"]["doc_type"] == "invoice"
+    assert body["doc"]["extracted_values"][0]["key"] == "n"
+    assert body["doc"]["folder_structure"] == ["Finance/Invoices"]
+
+
 async def test_find_by_hash_found(store: OpenSearchStore, fake_client: MagicMock) -> None:
     fake_client.search.return_value = {
         "hits": {"hits": [{"_source": _make_document().model_dump(mode="json")}]}

@@ -26,7 +26,7 @@ _STATUS_MAP: dict[type[DocStoreError], int] = {
     NotFoundError: status.HTTP_404_NOT_FOUND,
     ConflictError: status.HTTP_409_CONFLICT,
     ValidationError: status.HTTP_400_BAD_REQUEST,
-    ConversionError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    ConversionError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     StorageError: status.HTTP_503_SERVICE_UNAVAILABLE,
     ProviderError: status.HTTP_502_BAD_GATEWAY,
 }

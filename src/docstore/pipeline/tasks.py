@@ -10,13 +10,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from docstore.core.errors import DocStoreError
+from docstore.core.errors import DocStoreError, NotFoundError
 from docstore.core.logging import bind_correlation_id, get_logger
 from docstore.core.models import DocumentStatus
-from docstore.pipeline.stages import convert_to_markdown
+from docstore.pipeline.stages import analyze_metadata, convert_to_markdown
 
 if TYPE_CHECKING:
     from docstore.converters import ConverterRegistry
+    from docstore.llm import DocumentAnalyzer
     from docstore.storage import MinioStore, OpenSearchStore
 
 _log = get_logger("docstore.pipeline.tasks")
@@ -32,16 +33,30 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
     opensearch: OpenSearchStore = ctx["opensearch"]
     minio: MinioStore = ctx["minio"]
     converters: ConverterRegistry = ctx["converters"]
+    analyzer: DocumentAnalyzer = ctx["analyzer"]
 
     try:
         await opensearch.update_status(document_id, DocumentStatus.CONVERTING)
-        await convert_to_markdown(
+        markdown = await convert_to_markdown(
             document_id=document_id,
             opensearch=opensearch,
             minio=minio,
             converters=converters,
         )
-        # Analysis, chunking, embedding and indexing are added in Phases 4-5.
+
+        await opensearch.update_status(document_id, DocumentStatus.ANALYZING)
+        document = await opensearch.get_document(document_id)
+        if document is None:
+            raise NotFoundError(f"Document '{document_id}' disappeared during ingestion.")
+        await analyze_metadata(
+            document_id=document_id,
+            title=document.title,
+            markdown=markdown,
+            opensearch=opensearch,
+            analyzer=analyzer,
+        )
+
+        # Chunking, embedding and indexing are added in Phase 5.
         await opensearch.update_status(document_id, DocumentStatus.READY)
         _log.info("ingest_complete", document_id=document_id)
     except DocStoreError as exc:

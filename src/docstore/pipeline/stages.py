@@ -14,6 +14,8 @@ from docstore.core.logging import get_logger
 
 if TYPE_CHECKING:
     from docstore.converters import ConverterRegistry
+    from docstore.llm import DocumentAnalyzer
+    from docstore.llm.schemas import AnalysisResult
     from docstore.storage import MinioStore, OpenSearchStore
 
 _log = get_logger("docstore.pipeline.stages")
@@ -47,3 +49,29 @@ async def convert_to_markdown(
     await opensearch.update_content(document_id, markdown)
     _log.info("conversion_done", document_id=document_id, chars=len(markdown))
     return markdown
+
+
+async def analyze_metadata(
+    *,
+    document_id: str,
+    title: str,
+    markdown: str,
+    opensearch: OpenSearchStore,
+    analyzer: DocumentAnalyzer,
+) -> AnalysisResult:
+    """Run LLM analysis and persist the extracted metadata (FR-5/14/15/16)."""
+    result = await analyzer.analyze(title=title, content=markdown)
+    await opensearch.update_metadata(
+        document_id,
+        doc_type=result.doc_type,
+        extracted_values=result.extracted_values,
+        folder_structure=result.folder_structure,
+        category_paths=result.category_paths,
+    )
+    _log.info(
+        "analysis_persisted",
+        document_id=document_id,
+        doc_type=result.doc_type,
+        categories=len(result.category_paths),
+    )
+    return result

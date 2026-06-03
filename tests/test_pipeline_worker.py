@@ -51,7 +51,8 @@ async def test_on_startup_bootstraps_stores(monkeypatch: pytest.MonkeyPatch) -> 
     ctx: dict[str, Any] = {}
     await worker_module.on_startup(ctx)
     assert set(bootstrapped) == {"opensearch", "minio"}
-    assert "config" in ctx and "opensearch" in ctx and "minio" in ctx
+    for key in ("config", "opensearch", "minio", "converters", "analyzer"):
+        assert key in ctx
 
 
 async def test_on_shutdown_closes_opensearch() -> None:

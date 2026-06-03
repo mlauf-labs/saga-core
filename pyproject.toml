@@ -92,7 +92,7 @@ files = ["src", "tests"]
 
 # Third-party libraries that don't ship type information.
 [[tool.mypy.overrides]]
-module = ["opensearchpy.*", "minio.*", "arq.*"]
+module = ["opensearchpy.*", "minio.*", "arq.*", "ollama.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

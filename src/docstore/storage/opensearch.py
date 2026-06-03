@@ -25,6 +25,7 @@ from docstore.storage.mappings import (
 
 if TYPE_CHECKING:
     from docstore.core.config import OpenSearchConfig
+    from docstore.core.models import ExtractedValue
 
 _log = get_logger("docstore.storage.opensearch")
 
@@ -157,6 +158,34 @@ class OpenSearchStore:
         except Exception as exc:
             raise StorageError(
                 f"Failed to persist converted content for document '{document_id}': {exc}"
+            ) from exc
+
+    async def update_metadata(
+        self,
+        document_id: str,
+        *,
+        doc_type: str,
+        extracted_values: list[ExtractedValue],
+        folder_structure: list[str],
+        category_paths: list[str],
+    ) -> None:
+        """Persist LLM-extracted metadata on a document record (FR-14/15/16)."""
+        body = {
+            "doc": {
+                "doc_type": doc_type,
+                "extracted_values": [v.model_dump(mode="json") for v in extracted_values],
+                "folder_structure": folder_structure,
+                "category_paths": category_paths,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+        }
+        try:
+            await self.client.update(
+                index=self._config.document_index, id=document_id, body=body, refresh=True
+            )
+        except Exception as exc:
+            raise StorageError(
+                f"Failed to persist metadata for document '{document_id}': {exc}"
             ) from exc
 
     async def index_chunks(self, chunks: list[Chunk]) -> int:
