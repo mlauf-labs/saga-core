@@ -39,6 +39,12 @@ class ValidationError(DocStoreError):
     code = "validation_error"
 
 
+class ConflictError(DocStoreError):
+    """Raised on a conflicting state, e.g. a rejected duplicate upload (FR-13)."""
+
+    code = "conflict"
+
+
 class ConversionError(DocStoreError):
     """Raised when a document cannot be converted to text/Markdown."""
 

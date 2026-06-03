@@ -205,6 +205,36 @@ class OpenSearchStore:
             raise StorageError(f"Hybrid search failed: {exc}") from exc
         return [_hit_to_model(hit) for hit in response["hits"]["hits"]]
 
+    async def find_by_hash(self, content_hash: str) -> Document | None:
+        """Return the first document with a matching content hash, if any (FR-13)."""
+        body = {"size": 1, "query": {"term": {"content_hash": content_hash}}}
+        try:
+            response = await self.client.search(index=self._config.document_index, body=body)
+        except Exception as exc:
+            raise StorageError(f"Failed to look up document by content hash: {exc}") from exc
+        hits = response["hits"]["hits"]
+        if not hits:
+            return None
+        return Document.model_validate(hits[0]["_source"])
+
+    async def list_documents(self, *, page: int, page_size: int) -> tuple[list[Document], int]:
+        """Return a page of documents (newest first) and the total count (FR-28)."""
+        body = {
+            "from": max(page - 1, 0) * page_size,
+            "size": page_size,
+            "sort": [{"created_at": {"order": "desc"}}],
+            "query": {"match_all": {}},
+        }
+        try:
+            response = await self.client.search(index=self._config.document_index, body=body)
+        except Exception as exc:
+            raise StorageError(f"Failed to list documents: {exc}") from exc
+        hits = response["hits"]["hits"]
+        total = response["hits"]["total"]
+        total_count = total["value"] if isinstance(total, dict) else int(total)
+        documents = [Document.model_validate(hit["_source"]) for hit in hits]
+        return documents, total_count
+
     async def close(self) -> None:
         """Close the underlying client connection."""
         if self._client is not None:
