@@ -9,6 +9,9 @@ llm:
       base_url: ${OLLAMA_URL:-http://ollama:11434}
       model: ${OLLAMA_LLM_MODEL:-llama3.1:8b}
       temperature: 0.0
+      # Cap generation and fail fast on stuck calls (tune for your model/hardware).
+      max_output_tokens: 1024
+      request_timeout: 120.0
     openai:
       api_key: ${OPENAI_API_KEY:-}
       model: ${OPENAI_LLM_MODEL:-gpt-4o-mini}

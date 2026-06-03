@@ -86,6 +86,7 @@ async def index_chunks(
     markdown: str,
     doc_type: str | None,
     category_paths: list[str],
+    value_terms: list[str],
     opensearch: OpenSearchStore,
     chunker: MarkdownChunker,
     embedder: EmbeddingProvider,
@@ -108,6 +109,7 @@ async def index_chunks(
             embedding=vector,
             doc_type=doc_type,
             category_paths=category_paths,
+            value_terms=value_terms,
         )
         for ordinal, (text, vector) in enumerate(zip(texts, vectors, strict=True))
     ]

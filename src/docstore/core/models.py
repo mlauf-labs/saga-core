@@ -64,6 +64,9 @@ class Chunk(BaseModel):
     embedding: list[float]
     doc_type: str | None = None
     category_paths: list[str] = Field(default_factory=list)
+    # Denormalised extracted values as ``key=value`` terms for fast metadata
+    # filtering on the chunk index (FR-20).
+    value_terms: list[str] = Field(default_factory=list)
 
 
 class SearchHit(BaseModel):

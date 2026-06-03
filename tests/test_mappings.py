@@ -43,7 +43,7 @@ def test_build_filters() -> None:
     )
     assert {"term": {"doc_type": "invoice"}} in filters
     assert any("bool" in f for f in filters)
-    assert {"term": {"extracted_values.invoice_number.keyword": "123"}} in filters
+    assert {"term": {"value_terms": "invoice_number=123"}} in filters
 
 
 def test_build_hybrid_query_structure() -> None:

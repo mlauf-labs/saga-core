@@ -132,6 +132,7 @@ async def test_index_chunks_builds_and_indexes(
         markdown="# md",
         doc_type="invoice",
         category_paths=["Finance"],
+        value_terms=["invoice_number=INV-1"],
         opensearch=opensearch,
         chunker=chunker,
         embedder=embedder,
@@ -141,6 +142,7 @@ async def test_index_chunks_builds_and_indexes(
     assert [c.chunk_id for c in chunks] == ["d1:0", "d1:1"]
     assert chunks[0].embedding == [0.1, 0.2]
     assert chunks[1].doc_type == "invoice"
+    assert chunks[0].value_terms == ["invoice_number=INV-1"]
 
 
 async def test_index_chunks_no_chunks_returns_zero(
@@ -152,6 +154,7 @@ async def test_index_chunks_no_chunks_returns_zero(
         markdown="",
         doc_type=None,
         category_paths=[],
+        value_terms=[],
         opensearch=opensearch,
         chunker=chunker,
         embedder=embedder,

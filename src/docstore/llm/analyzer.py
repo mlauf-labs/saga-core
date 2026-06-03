@@ -23,6 +23,8 @@ from docstore.llm.schemas import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable
+
     from docstore.llm.base import LlmProvider
     from docstore.llm.prompts import PromptLibrary
 
@@ -99,27 +101,49 @@ class DocumentAnalyzer:
         return _parse(await self._provider.complete(prompt=prompt), Categorization)
 
     async def analyze(self, *, title: str, content: str) -> AnalysisResult:
-        """Run all analysis steps and return the combined, validated result."""
-        classification = await self.classify(title=title, content=content)
-        extraction = await self.extract_values(content=content)
-        values = [item.to_model() for item in extraction.values]
-        values_summary = ", ".join(f"{v.key}={v.value}" for v in values) or "none"
-        categorization = await self.categorize(
-            content=content,
-            doc_type=classification.doc_type,
-            extracted_values=values_summary,
+        """Run all analysis steps and return the combined, validated result.
+
+        Each step is resilient (FR-18): a malformed LLM response for one step is
+        logged and falls back to a sensible default rather than failing the whole
+        document, so it still becomes searchable. Provider/transport errors
+        propagate so the job can be retried.
+        """
+        classification = await self._safe(
+            "classification", self.classify(title=title, content=content)
         )
-        paths = [p.strip() for p in categorization.paths if p.strip()]
+        doc_type = classification.doc_type if classification else "unknown"
+
+        extraction = await self._safe("value_extraction", self.extract_values(content=content))
+        values = [item.to_model() for item in extraction.values] if extraction else []
+        values = [v for v in values if v.key]
+        values_summary = ", ".join(f"{v.key}={v.value}" for v in values) or "none"
+
+        categorization = await self._safe(
+            "categorization",
+            self.categorize(content=content, doc_type=doc_type, extracted_values=values_summary),
+        )
+        paths = (
+            [p.strip() for p in categorization.paths if p.strip()] if categorization else []
+        )
+
         _log.info(
             "analysis_done",
             title=title,
-            doc_type=classification.doc_type,
+            doc_type=doc_type,
             values=len(values),
             categories=len(paths),
         )
         return AnalysisResult(
-            doc_type=classification.doc_type,
+            doc_type=doc_type,
             extracted_values=values,
             folder_structure=paths,
             category_paths=paths,
         )
+
+    async def _safe[ResultT](self, step: str, coro: Awaitable[ResultT]) -> ResultT | None:
+        """Await an analysis step, returning ``None`` on a parsing/analysis failure."""
+        try:
+            return await coro
+        except AnalysisError as exc:
+            _log.warning("analysis_step_failed", step=step, error=str(exc))
+            return None
