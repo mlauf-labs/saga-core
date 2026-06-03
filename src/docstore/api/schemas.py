@@ -92,3 +92,14 @@ class CategoryTreeResponse(BaseModel):
     """The derived category tree (FR-22)."""
 
     tree: list[CategoryNode]
+
+
+class ExportPageResponse(BaseModel):
+    """A page of the full-export stream (FR-28).
+
+    ``items`` include the converted Markdown and all metadata. ``next_cursor`` is an
+    opaque token to fetch the next page; ``null`` on the last page.
+    """
+
+    items: list[DocumentResponse]
+    next_cursor: str | None = None

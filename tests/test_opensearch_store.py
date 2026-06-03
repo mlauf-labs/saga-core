@@ -207,6 +207,28 @@ async def test_list_documents_total_int(store: OpenSearchStore, fake_client: Mag
     assert docs == []
 
 
+async def test_scroll_documents_returns_cursor(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    source = _make_document().model_dump(mode="json")
+    fake_client.search.return_value = {"hits": {"hits": [{"_source": source, "sort": [123, "d1"]}]}}
+    docs, cursor = await store.scroll_documents(page_size=1)
+    assert len(docs) == 1
+    # Full page (size==1) -> a cursor is returned for the next page.
+    assert cursor == [123, "d1"]
+
+
+async def test_scroll_documents_last_page_no_cursor(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    source = _make_document().model_dump(mode="json")
+    fake_client.search.return_value = {"hits": {"hits": [{"_source": source, "sort": [123, "d1"]}]}}
+    docs, cursor = await store.scroll_documents(page_size=10, search_after=[1, "a"])
+    assert len(docs) == 1
+    assert cursor is None
+    assert fake_client.search.await_args.kwargs["body"]["search_after"] == [1, "a"]
+
+
 async def test_category_terms(store: OpenSearchStore, fake_client: MagicMock) -> None:
     fake_client.search.return_value = {
         "aggregations": {

@@ -226,6 +226,33 @@ class OpenSearchStore:
                 f"Failed to delete document '{document_id}' and its chunks: {exc}"
             ) from exc
 
+    async def scroll_documents(
+        self, *, page_size: int, search_after: list[Any] | None = None
+    ) -> tuple[list[Document], list[Any] | None]:
+        """Page through all documents using ``search_after`` cursor pagination (FR-28).
+
+        Returns the page of documents and the cursor for the next page (``None`` when
+        the last page has been reached).
+        """
+        body: dict[str, Any] = {
+            "size": page_size,
+            "sort": [
+                {"created_at": {"order": "asc"}},
+                {"document_id": {"order": "asc"}},
+            ],
+            "query": {"match_all": {}},
+        }
+        if search_after is not None:
+            body["search_after"] = search_after
+        try:
+            response = await self.client.search(index=self._config.document_index, body=body)
+        except Exception as exc:
+            raise StorageError(f"Failed to scroll documents: {exc}") from exc
+        hits = response["hits"]["hits"]
+        documents = [Document.model_validate(hit["_source"]) for hit in hits]
+        next_cursor = hits[-1]["sort"] if len(hits) == page_size and hits else None
+        return documents, next_cursor
+
     async def category_terms(self) -> list[tuple[str, int]]:
         """Return all category paths with their document counts (FR-22).
 

@@ -99,6 +99,29 @@ List documents in a category branch (FR-22). The path is the category path, e.g.
 `/categories/Insurance/Health/documents`. Query: `include_subtree` (default `true`),
 `page`, `page_size`. Returns a paginated `DocumentListResponse`.
 
+### `GET /documents/{document_id}/file`
+Download the original document binary (used by backups). Streams the bytes with the
+stored `mime_type` and a `Content-Disposition` attachment header. `404` if unknown.
+
+### `GET /export/documents`
+Stream **all** documents for backup with cursor pagination (FR-28). Query: `cursor`
+(opaque token from the previous page; omit for the first page) and `page_size`.
+Returns `{ items, next_cursor }` where `items` are full `DocumentResponse` objects
+(including `content_markdown`) and `next_cursor` is `null` on the last page.
+
+```bash
+# Walk all pages
+cursor=""; while :; do
+  page=$(curl -s -H "Authorization: Bearer $TOKEN" \
+    "http://localhost:8000/export/documents?page_size=50&cursor=$cursor")
+  # ...process page.items...
+  cursor=$(echo "$page" | jq -r '.next_cursor // empty'); [ -z "$cursor" ] && break
+done
+```
+
+Prefer the bundled script for full backups: `docstore-backup` (see
+[`backup.md`](backup.md)).
+
 ## Notes
 
 - Ingestion (conversion → LLM analysis → chunking → embedding → indexing) runs on the

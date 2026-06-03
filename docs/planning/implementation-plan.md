@@ -158,14 +158,21 @@ Delivered: `search/{tree,service}.py`, `api/routes/search.py`, `mcp/{server,auth
 
 ---
 
-## Phase 7 — Backup & export
+## Phase 7 — Backup & export ✅
 
 **Goal:** export everything to a directory tree.
 
-- ☐ Paginated export endpoint (`search_after`).
-- ☐ `scripts/backup.py`: download all → directory layout from `folder_structure[0]`
-      with binary + `.md` + `*.metadata.json`.
-- ☐ Tests for layout building + pagination.
+- ☑ Paginated export endpoint `GET /export/documents` (`search_after` cursor,
+      opaque base64 token) including content + metadata.
+- ☑ Binary download endpoint `GET /documents/{id}/file`.
+- ☑ `scripts/backup.py` (`docstore-backup`): pages the export API and writes, per
+      document, into a directory from `folder_structure[0]`: the original binary, the
+      `.md` text, and a `*.metadata.json` sidecar.
+- ☑ Tests for cursor codec, scroll store, export route, layout helpers, and the
+      backup runner (respx-mocked).
+
+Delivered: `OpenSearchStore.scroll_documents`, `api/cursor.py`, `api/routes/export.py`,
+`scripts/layout.py`, `scripts/backup.py`. Coverage 94%.
 
 **Satisfies:** FR-28..31.
 
