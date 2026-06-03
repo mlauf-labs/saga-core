@@ -51,7 +51,15 @@ async def test_on_startup_bootstraps_stores(monkeypatch: pytest.MonkeyPatch) -> 
     ctx: dict[str, Any] = {}
     await worker_module.on_startup(ctx)
     assert set(bootstrapped) == {"opensearch", "minio"}
-    for key in ("config", "opensearch", "minio", "converters", "analyzer"):
+    for key in (
+        "config",
+        "opensearch",
+        "minio",
+        "converters",
+        "analyzer",
+        "chunker",
+        "embedder",
+    ):
         assert key in ctx
 
 

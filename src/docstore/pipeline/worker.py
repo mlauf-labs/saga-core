@@ -9,9 +9,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from docstore.chunking import MarkdownChunker
 from docstore.converters import ConverterRegistry, load_converters_config
 from docstore.core.config import load_config
 from docstore.core.logging import configure_logging, get_logger
+from docstore.embeddings import build_embedding_provider, load_embeddings_config
 from docstore.llm import (
     DocumentAnalyzer,
     PromptLibrary,
@@ -24,6 +26,8 @@ from docstore.storage import MinioStore, OpenSearchStore
 
 if TYPE_CHECKING:
     from arq.connections import RedisSettings
+
+    from docstore.embeddings import EmbeddingProvider
 
 _log = get_logger("docstore.pipeline.worker")
 
@@ -40,6 +44,15 @@ async def on_startup(ctx: dict[str, Any]) -> None:
         PromptLibrary(),
         max_input_chars=llm_config.max_input_chars,
     )
+    chunker = MarkdownChunker(config.chunking)
+    embedder = build_embedding_provider(load_embeddings_config())
+    if embedder.dimension != config.opensearch.vector_dimension:
+        _log.warning(
+            "embedding_dimension_mismatch",
+            embedding_dimension=embedder.dimension,
+            index_dimension=config.opensearch.vector_dimension,
+            hint="Set opensearch.vector_dimension to match the embedding model and reindex.",
+        )
     await opensearch.bootstrap()
     await minio.bootstrap()
     ctx["config"] = config
@@ -47,6 +60,8 @@ async def on_startup(ctx: dict[str, Any]) -> None:
     ctx["minio"] = minio
     ctx["converters"] = converters
     ctx["analyzer"] = analyzer
+    ctx["chunker"] = chunker
+    ctx["embedder"] = embedder
     _log.info("worker_ready")
 
 
@@ -60,6 +75,9 @@ async def on_shutdown(ctx: dict[str, Any]) -> None:
     analyzer: DocumentAnalyzer | None = ctx.get("analyzer")
     if analyzer is not None:
         await analyzer.aclose()
+    embedder: EmbeddingProvider | None = ctx.get("embedder")
+    if embedder is not None:
+        await embedder.aclose()
     _log.info("worker_stopped")
 
 

@@ -13,10 +13,12 @@ from typing import TYPE_CHECKING, Any
 from docstore.core.errors import DocStoreError, NotFoundError
 from docstore.core.logging import bind_correlation_id, get_logger
 from docstore.core.models import DocumentStatus
-from docstore.pipeline.stages import analyze_metadata, convert_to_markdown
+from docstore.pipeline.stages import analyze_metadata, convert_to_markdown, index_chunks
 
 if TYPE_CHECKING:
+    from docstore.chunking import MarkdownChunker
     from docstore.converters import ConverterRegistry
+    from docstore.embeddings import EmbeddingProvider
     from docstore.llm import DocumentAnalyzer
     from docstore.storage import MinioStore, OpenSearchStore
 
@@ -34,6 +36,8 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
     minio: MinioStore = ctx["minio"]
     converters: ConverterRegistry = ctx["converters"]
     analyzer: DocumentAnalyzer = ctx["analyzer"]
+    chunker: MarkdownChunker = ctx["chunker"]
+    embedder: EmbeddingProvider = ctx["embedder"]
 
     try:
         await opensearch.update_status(document_id, DocumentStatus.CONVERTING)
@@ -48,7 +52,7 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
         document = await opensearch.get_document(document_id)
         if document is None:
             raise NotFoundError(f"Document '{document_id}' disappeared during ingestion.")
-        await analyze_metadata(
+        analysis = await analyze_metadata(
             document_id=document_id,
             title=document.title,
             markdown=markdown,
@@ -56,7 +60,17 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
             analyzer=analyzer,
         )
 
-        # Chunking, embedding and indexing are added in Phase 5.
+        await opensearch.update_status(document_id, DocumentStatus.INDEXING)
+        await index_chunks(
+            document_id=document_id,
+            markdown=markdown,
+            doc_type=analysis.doc_type,
+            category_paths=analysis.category_paths,
+            opensearch=opensearch,
+            chunker=chunker,
+            embedder=embedder,
+        )
+
         await opensearch.update_status(document_id, DocumentStatus.READY)
         _log.info("ingest_complete", document_id=document_id)
     except DocStoreError as exc:

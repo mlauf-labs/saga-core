@@ -1,16 +1,14 @@
-"""Embedding provider abstraction (Ollama / OpenAI / Azure). Phase 4/5."""
+"""Embedding provider abstraction (Ollama / OpenAI / Azure), FR-33 / NFR-34."""
 
 from __future__ import annotations
 
-from typing import Protocol
+from docstore.embeddings.base import EmbeddingProvider
+from docstore.embeddings.config import EmbeddingsConfig, load_embeddings_config
+from docstore.embeddings.providers import build_embedding_provider
 
-
-class EmbeddingProvider(Protocol):
-    """Produces embedding vectors for text (NFR-34)."""
-
-    name: str
-    dimension: int
-
-    async def embed(self, texts: list[str]) -> list[list[float]]:
-        """Return one embedding vector per input text."""
-        ...
+__all__ = [
+    "EmbeddingProvider",
+    "EmbeddingsConfig",
+    "build_embedding_provider",
+    "load_embeddings_config",
+]
