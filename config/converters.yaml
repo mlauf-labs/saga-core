@@ -1,0 +1,37 @@
+# Converter routing (FR-3).
+# Maps file types to a conversion service. Resolution order:
+#   1) explicit extension match
+#   2) MIME type match
+#   3) `default`
+#
+# Default policy (confirmed): PDF -> Docling, everything else -> Kreuzberg.
+
+services:
+  docling:
+    base_url: ${DOCLING_URL:-http://docling:5001}
+    timeout_seconds: 600
+    # Output format requested from the service.
+    output_format: markdown
+    ocr:
+      enabled: true
+      languages: [en, de]
+  kreuzberg:
+    base_url: ${KREUZBERG_URL:-http://kreuzberg:8000}
+    timeout_seconds: 600
+    output_format: markdown
+    ocr:
+      enabled: true
+      languages: [eng, deu]
+
+routing:
+  default: kreuzberg
+
+  by_extension:
+    pdf: docling
+
+  by_mime_type:
+    application/pdf: docling
+    # Non-PDF examples (all fall back to kreuzberg via `default`, listed for clarity):
+    # application/vnd.openxmlformats-officedocument.wordprocessingml.document: kreuzberg
+    # image/png: kreuzberg
+    # image/jpeg: kreuzberg

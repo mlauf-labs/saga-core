@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a problem with DocStore
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including expected vs. actual behaviour.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Upload ...
+        2. Call ...
+        3. See error ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log output (redact any secrets).
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: DocStore version / commit
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Docker version, provider (ollama/openai/azure), etc.

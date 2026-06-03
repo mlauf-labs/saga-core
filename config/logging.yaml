@@ -1,0 +1,20 @@
+# Structured, coloured console logging (NFR-16).
+# `renderer: console` -> human-readable + coloured (dev).
+# `renderer: json`    -> structured JSON lines (prod).
+
+level: ${LOG_LEVEL:-INFO}
+renderer: ${LOG_RENDERER:-console}
+# Include the job/correlation id in every record where available.
+include_correlation_id: true
+
+categories:
+  docstore.api: INFO
+  docstore.mcp: INFO
+  docstore.pipeline: INFO
+  docstore.storage: INFO
+  docstore.llm: INFO
+  docstore.converters: INFO
+  # Third-party noise reduction.
+  opensearch: WARNING
+  httpx: WARNING
+  uvicorn.access: WARNING

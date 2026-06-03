@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest an idea or enhancement for DocStore
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What problem does this solve? Who benefits?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: input
+    id: requirement
+    attributes:
+      label: Related requirement ID (if any)
+      placeholder: e.g. FR-19

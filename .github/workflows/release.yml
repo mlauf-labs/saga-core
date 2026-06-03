@@ -1,0 +1,33 @@
+name: Release
+
+# Generates release notes/changelog from Conventional Commits (NFR-26) when a
+# version tag is pushed (Git Flow: tags are created on `main`).
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v4
+        id: changelog
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.changelog.outputs.content }}
+          generate_release_notes: false

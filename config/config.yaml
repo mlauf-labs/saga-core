@@ -1,0 +1,70 @@
+# DocStore main configuration.
+# Secrets MUST be provided via environment variables using ${ENV_VAR} syntax.
+# See .env.example for the list of required variables.
+
+app:
+  name: docstore
+  environment: ${DOCSTORE_ENV:-development}
+
+api:
+  host: 0.0.0.0
+  port: 8000
+  # Toggle the interactive Swagger UI (FR-34 / NFR-29).
+  enable_swagger: true
+  # Maximum upload size in bytes (NFR-20).
+  max_upload_bytes: 104857600 # 100 MiB
+  pagination:
+    default_page_size: 25
+    max_page_size: 200
+
+mcp:
+  host: 0.0.0.0
+  port: 8100
+  transport: streamable-http
+  # Bounded result size for performant search (NFR-10).
+  default_top_k: 10
+  max_top_k: 50
+
+security:
+  # Bearer token(s) for REST + MCP. Comma-separated list resolved from env.
+  bearer_tokens: ${DOCSTORE_API_TOKENS}
+
+opensearch:
+  hosts: ${OPENSEARCH_HOSTS:-http://opensearch:9200}
+  username: ${OPENSEARCH_USERNAME:-admin}
+  password: ${OPENSEARCH_PASSWORD}
+  verify_certs: false
+  document_index: documents
+  chunk_index: document_chunks
+  hybrid_pipeline: docstore-hybrid
+  # Must match the active embedding model (FR-27). Changing requires reindex.
+  vector_dimension: 768
+  vector_space_type: cosinesimil
+  # Relative weights for hybrid score combination [lexical, semantic].
+  hybrid_weights: [0.4, 0.6]
+
+minio:
+  endpoint: ${MINIO_ENDPOINT:-minio:9000}
+  access_key: ${MINIO_ACCESS_KEY}
+  secret_key: ${MINIO_SECRET_KEY}
+  secure: false
+  bucket: docstore-originals
+
+redis:
+  url: ${REDIS_URL:-redis://redis:6379/0}
+
+chunking:
+  # Maximum chunk size in tokens (FR-6, configurable).
+  max_tokens: 512
+  overlap_tokens: 64
+  # Tokenizer used for token-based splitting fallback.
+  tokenizer: cl100k_base
+
+dedup:
+  # reject | replace | allow (FR-13)
+  on_duplicate: replace
+  # On update: keep | new (FR-11)
+  document_id_on_update: keep
+
+logging:
+  config_file: config/logging.yaml
