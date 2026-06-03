@@ -61,11 +61,17 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
         )
 
         await opensearch.update_status(document_id, DocumentStatus.INDEXING)
+        value_terms: list[str] = []
+        for value in analysis.extracted_values:
+            value_terms.append(f"{value.key}={value.value}")
+            if value.normalized and value.normalized != value.value:
+                value_terms.append(f"{value.key}={value.normalized}")
         await index_chunks(
             document_id=document_id,
             markdown=markdown,
             doc_type=analysis.doc_type,
             category_paths=analysis.category_paths,
+            value_terms=value_terms,
             opensearch=opensearch,
             chunker=chunker,
             embedder=embedder,

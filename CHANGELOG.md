@@ -4,6 +4,24 @@ All notable changes to this project are documented here. This project follows
 [Conventional Commits](https://www.conventionalcommits.org/); release notes are
 generated from the commit history (see `cliff.toml` and the release workflow).
 
+## [Unreleased]
+
+### Bug Fixes
+- **build**: copy `README.md`/`LICENSE` before `uv sync` so the image builds.
+- **converters**: resolve a usable MIME type from the filename when uploads arrive
+  as `application/octet-stream`, so conversion routing/extraction works.
+- **llm**: tolerant parsing of analysis output (coerce numbers/objects, fall back
+  `key`→`type`) and make each analysis step non-fatal so one malformed response no
+  longer fails the whole document (FR-18).
+- **llm**: cap generated tokens (`max_output_tokens`) and add a per-request timeout
+  so a stuck/rambling model fails fast instead of hanging ingestion.
+- **search**: denormalise extracted values onto chunks as `value_terms` and fix the
+  metadata value filter so `filters={key: value}` actually matches (FR-20).
+
+### Build & Ops
+- **compose**: pass provider model/credential env vars through to containers; add an
+  E2E override (`docker-compose.e2e.yml`) using `!reset`/`!override` for host ports.
+
 ## [1.0.0] - 2026-06-03
 
 First public release: the complete ingestion-to-search pipeline for a RAG document

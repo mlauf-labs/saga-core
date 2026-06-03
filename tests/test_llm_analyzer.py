@@ -60,11 +60,48 @@ async def test_analyze_combines_steps() -> None:
     assert "inv.pdf" in provider.prompts[0]
 
 
-async def test_analyze_invalid_json_raises() -> None:
-    provider = ScriptedProvider(["not json at all"])
+async def test_analyze_coerces_loose_value_shapes() -> None:
+    # Small models often return numbers, nested objects, or `type` instead of `key`.
+    provider = ScriptedProvider(
+        [
+            '{"doc_type": "invoice", "confidence": 0.9}',
+            '{"values": ['
+            '{"type": "invoice_number", "value": "INV-1"},'
+            '{"type": "net_amount", "value": 184.5},'
+            '{"type": "bill_to", "value": {"name": "Jane", "city": "Springfield"}}'
+            ']}',
+            '{"paths": ["Finance/Invoices"], "confidence": 0.7}',
+        ]
+    )
     analyzer = DocumentAnalyzer(provider, PromptLibrary("prompts"))
-    with pytest.raises(AnalysisError):
-        await analyzer.analyze(title="x", content="y")
+    result = await analyzer.analyze(title="inv.pdf", content="total")
+    by_key = {v.key: v.value for v in result.extracted_values}
+    assert by_key["invoice_number"] == "INV-1"
+    assert by_key["net_amount"] == "184.5"
+    assert "Jane" in by_key["bill_to"]
+
+
+async def test_analyze_step_failure_is_non_fatal() -> None:
+    # Classification ok, value-extraction malformed, categorization ok.
+    provider = ScriptedProvider(
+        [
+            '{"doc_type": "invoice", "confidence": 0.9}',
+            "totally not json",
+            '{"paths": ["Finance"], "confidence": 0.5}',
+        ]
+    )
+    analyzer = DocumentAnalyzer(provider, PromptLibrary("prompts"))
+    result = await analyzer.analyze(title="x", content="y")
+    assert result.doc_type == "invoice"
+    assert result.extracted_values == []
+    assert result.category_paths == ["Finance"]
+
+
+async def test_analyze_classification_failure_falls_back() -> None:
+    provider = ScriptedProvider(["nope", '{"values": []}', '{"paths": []}'])
+    analyzer = DocumentAnalyzer(provider, PromptLibrary("prompts"))
+    result = await analyzer.analyze(title="x", content="y")
+    assert result.doc_type == "unknown"
 
 
 async def test_truncation_limits_content() -> None:

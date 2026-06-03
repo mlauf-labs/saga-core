@@ -63,6 +63,7 @@ def chunk_index_body(config: OpenSearchConfig) -> dict[str, Any]:
                 "ordinal": {"type": "integer"},
                 "doc_type": {"type": "keyword"},
                 "category_paths": {"type": "keyword"},
+                "value_terms": {"type": "keyword"},
                 "embedding": {
                     "type": "knn_vector",
                     "dimension": config.vector_dimension,
@@ -123,7 +124,8 @@ def build_filters(
             }
         )
     for key, value in (extracted_values or {}).items():
-        filters.append({"term": {f"extracted_values.{key}.keyword": value}})
+        # Chunks denormalise extracted values as ``key=value`` keyword terms (FR-20).
+        filters.append({"term": {"value_terms": f"{key}={value}"}})
     return filters
 
 

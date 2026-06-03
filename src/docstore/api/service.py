@@ -7,6 +7,7 @@ mocked services.
 from __future__ import annotations
 
 import hashlib
+import mimetypes
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -21,10 +22,25 @@ if TYPE_CHECKING:
 
 _log = get_logger("docstore.api.service")
 
+_GENERIC_CONTENT_TYPES = {"", "application/octet-stream", "binary/octet-stream"}
+_FALLBACK_CONTENT_TYPE = "application/octet-stream"
+
 
 def compute_content_hash(data: bytes) -> str:
     """Return the SHA-256 hex digest of ``data`` (used for dedup, FR-13)."""
     return hashlib.sha256(data).hexdigest()
+
+
+def resolve_content_type(content_type: str | None, filename: str) -> str:
+    """Resolve a usable MIME type, guessing from the filename when generic/missing.
+
+    Many clients upload with a generic ``application/octet-stream`` type; converters
+    rely on a meaningful type, so we infer it from the file extension when needed.
+    """
+    if content_type and content_type.lower() not in _GENERIC_CONTENT_TYPES:
+        return content_type
+    guessed, _ = mimetypes.guess_type(filename)
+    return guessed or content_type or _FALLBACK_CONTENT_TYPE
 
 
 def _validate_upload(data: bytes, max_bytes: int) -> None:
@@ -47,6 +63,7 @@ async def create_document(
 ) -> Document:
     """Validate, deduplicate, store, index and enqueue a new document (FR-1/13)."""
     _validate_upload(data, services.config.api.max_upload_bytes)
+    content_type = resolve_content_type(content_type, filename)
     content_hash = compute_content_hash(data)
 
     existing = await services.opensearch.find_by_hash(content_hash)

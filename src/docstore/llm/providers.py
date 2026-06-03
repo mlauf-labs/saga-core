@@ -40,7 +40,8 @@ class OllamaLlm:
 
         self._model = _require(settings.model, "model", self.name)
         self._temperature = settings.temperature
-        self._client = AsyncClient(host=settings.base_url)
+        self._num_predict = settings.max_output_tokens
+        self._client = AsyncClient(host=settings.base_url, timeout=settings.request_timeout)
 
     async def complete(self, *, prompt: str, json_mode: bool = True) -> str:
         try:
@@ -48,7 +49,7 @@ class OllamaLlm:
                 model=self._model,
                 messages=[{"role": "user", "content": prompt}],
                 format="json" if json_mode else "",
-                options={"temperature": self._temperature},
+                options={"temperature": self._temperature, "num_predict": self._num_predict},
             )
         except Exception as exc:
             raise ProviderError(f"Ollama chat request failed: {exc}") from exc
@@ -66,9 +67,12 @@ class _OpenAICompatibleLlm:
 
     name = "openai"
 
-    def __init__(self, model: str, temperature: float, client: object) -> None:
+    def __init__(
+        self, model: str, temperature: float, max_output_tokens: int, client: object
+    ) -> None:
         self._model = model
         self._temperature = temperature
+        self._max_output_tokens = max_output_tokens
         self._client = client
 
     async def complete(self, *, prompt: str, json_mode: bool = True) -> str:
@@ -76,6 +80,7 @@ class _OpenAICompatibleLlm:
             "model": self._model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": self._temperature,
+            "max_tokens": self._max_output_tokens,
         }
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
@@ -103,10 +108,12 @@ class OpenAILlm(_OpenAICompatibleLlm):
         client = AsyncOpenAI(
             api_key=_require(settings.api_key, "api_key", self.name),
             base_url=settings.base_url or _DEFAULT_OPENAI_BASE_URL,
+            timeout=settings.request_timeout,
         )
         super().__init__(
             model=_require(settings.model, "model", self.name),
             temperature=settings.temperature,
+            max_output_tokens=settings.max_output_tokens,
             client=client,
         )
 
@@ -123,10 +130,12 @@ class AzureLlm(_OpenAICompatibleLlm):
             api_key=_require(settings.api_key, "api_key", self.name),
             azure_endpoint=_require(settings.endpoint, "endpoint", self.name),
             api_version=_require(settings.api_version, "api_version", self.name),
+            timeout=settings.request_timeout,
         )
         super().__init__(
             model=_require(settings.deployment, "deployment", self.name),
             temperature=settings.temperature,
+            max_output_tokens=settings.max_output_tokens,
             client=client,
         )
 

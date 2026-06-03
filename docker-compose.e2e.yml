@@ -1,0 +1,14 @@
+# E2E override: avoid host-port collisions with other containers already running
+# on this machine. `!reset`/`!override` replace the base `ports` lists instead of
+# merging. Inter-service traffic uses the docker network, so dropping host
+# publishing for infra services is fine for the test.
+services:
+  minio:
+    ports: !reset []
+  docling:
+    ports: !reset []
+  opensearch-dashboards:
+    ports: !reset []
+  mcp:
+    ports: !override
+      - "8110:8100"

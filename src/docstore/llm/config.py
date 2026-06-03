@@ -22,6 +22,10 @@ class LlmProviderSettings(BaseModel):
     base_url: str | None = None
     model: str | None = None
     temperature: float = 0.0
+    # Cap generated tokens so a rambling model can't run unbounded (NFR-10/15).
+    max_output_tokens: int = 1024
+    # Per-request timeout in seconds; a stuck generation fails fast and is retried.
+    request_timeout: float = 120.0
     # OpenAI / Azure
     api_key: str | None = None
     # Azure
