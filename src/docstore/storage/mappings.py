@@ -1,0 +1,149 @@
+"""Pure builders for OpenSearch index mappings, the hybrid search pipeline, and
+queries (FR-25). Kept side-effect free so they can be unit-tested without a cluster.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from docstore.core.config import OpenSearchConfig
+
+
+def document_index_body() -> dict[str, Any]:
+    """Mapping for the keyword/metadata document index."""
+    return {
+        "settings": {"index": {"number_of_shards": 1}},
+        "mappings": {
+            "properties": {
+                "document_id": {"type": "keyword"},
+                "title": {
+                    "type": "text",
+                    "fields": {"keyword": {"type": "keyword", "ignore_above": 512}},
+                },
+                "content_markdown": {"type": "text"},
+                "doc_type": {"type": "keyword"},
+                "extracted_values": {
+                    "type": "nested",
+                    "properties": {
+                        "key": {"type": "keyword"},
+                        "type": {"type": "keyword"},
+                        "value": {
+                            "type": "text",
+                            "fields": {"keyword": {"type": "keyword", "ignore_above": 512}},
+                        },
+                        "normalized": {"type": "keyword"},
+                        "confidence": {"type": "float"},
+                    },
+                },
+                "folder_structure": {"type": "keyword"},
+                "category_paths": {"type": "keyword"},
+                "minio_object": {"type": "keyword"},
+                "content_hash": {"type": "keyword"},
+                "mime_type": {"type": "keyword"},
+                "size_bytes": {"type": "long"},
+                "status": {"type": "keyword"},
+                "error": {"type": "text"},
+                "created_at": {"type": "date"},
+                "updated_at": {"type": "date"},
+            }
+        },
+    }
+
+
+def chunk_index_body(config: OpenSearchConfig) -> dict[str, Any]:
+    """Mapping for the kNN-enabled chunk/vector index."""
+    return {
+        "settings": {"index": {"knn": True, "number_of_shards": 1}},
+        "mappings": {
+            "properties": {
+                "chunk_id": {"type": "keyword"},
+                "document_id": {"type": "keyword"},
+                "snippet": {"type": "text"},
+                "ordinal": {"type": "integer"},
+                "doc_type": {"type": "keyword"},
+                "category_paths": {"type": "keyword"},
+                "embedding": {
+                    "type": "knn_vector",
+                    "dimension": config.vector_dimension,
+                    "method": {
+                        "name": "hnsw",
+                        "space_type": config.vector_space_type,
+                        "engine": config.vector_engine,
+                        "parameters": {
+                            "ef_construction": config.knn_ef_construction,
+                            "m": config.knn_m,
+                        },
+                    },
+                },
+            }
+        },
+    }
+
+
+def hybrid_pipeline_body(config: OpenSearchConfig) -> dict[str, Any]:
+    """Search pipeline that normalizes + combines BM25 and kNN scores (FR-19)."""
+    return {
+        "description": "DocStore hybrid search normalization/combination",
+        "phase_results_processors": [
+            {
+                "normalization-processor": {
+                    "normalization": {"technique": config.hybrid_normalization},
+                    "combination": {
+                        "technique": config.hybrid_combination,
+                        "parameters": {"weights": list(config.hybrid_weights)},
+                    },
+                }
+            }
+        ],
+    }
+
+
+def build_filters(
+    *,
+    doc_type: str | None = None,
+    category_path: str | None = None,
+    extracted_values: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """Build OpenSearch filter clauses for metadata filtering (FR-20)."""
+    filters: list[dict[str, Any]] = []
+    if doc_type:
+        filters.append({"term": {"doc_type": doc_type}})
+    if category_path:
+        # Match the exact path or any descendant path.
+        filters.append(
+            {
+                "bool": {
+                    "should": [
+                        {"term": {"category_paths": category_path}},
+                        {"prefix": {"category_paths": f"{category_path}/"}},
+                    ],
+                    "minimum_should_match": 1,
+                }
+            }
+        )
+    for key, value in (extracted_values or {}).items():
+        filters.append({"term": {f"extracted_values.{key}.keyword": value}})
+    return filters
+
+
+def build_hybrid_query(
+    *,
+    query_text: str,
+    query_vector: list[float],
+    top_k: int,
+    filters: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build a hybrid (BM25 + kNN) query body for the chunk index (FR-19)."""
+    knn_clause: dict[str, Any] = {"knn": {"embedding": {"vector": query_vector, "k": top_k}}}
+    match_clause: dict[str, Any] = {"match": {"snippet": {"query": query_text}}}
+    if filters:
+        knn_clause["knn"]["embedding"]["filter"] = {"bool": {"filter": filters}}
+        match_clause = {
+            "bool": {"must": [match_clause], "filter": filters},
+        }
+    return {
+        "size": top_k,
+        "query": {"hybrid": {"queries": [match_clause, knn_clause]}},
+        "_source": {"excludes": ["embedding"]},
+    }

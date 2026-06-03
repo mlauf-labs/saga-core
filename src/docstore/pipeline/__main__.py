@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-from docstore.core.config import load_config
-from docstore.core.logging import configure_logging, get_logger
+from arq import run_worker
+
+from docstore.core.logging import configure_logging
+from docstore.pipeline.worker import configure
 
 
 def main() -> None:
-    load_config()
     configure_logging()
-    log = get_logger("docstore.pipeline")
-    log.info("worker_start_pending", note="Worker tasks are implemented in Phases 3-5.")
-    raise NotImplementedError("Worker is implemented in Phases 1-5.")
+    run_worker(configure())  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":

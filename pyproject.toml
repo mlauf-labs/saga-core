@@ -16,7 +16,7 @@ dependencies = [
     "pydantic>=2.9",
     "pydantic-settings>=2.5",
     "python-multipart>=0.0.12",
-    "opensearch-py>=2.7",
+    "opensearch-py[async]>=2.7",
     "minio>=7.2",
     "arq>=0.26",
     "redis>=5.1",
@@ -90,6 +90,11 @@ disallow_any_generics = true
 show_error_codes = true
 files = ["src", "tests"]
 
+# Third-party libraries that don't ship type information.
+[[tool.mypy.overrides]]
+module = ["opensearchpy.*", "minio.*", "arq.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers --cov=docstore --cov-report=term-missing"
 testpaths = ["tests"]
@@ -104,7 +109,6 @@ omit = [
     "*/__main__.py",
     "src/docstore/mcp/server.py",
     "src/docstore/pipeline/tasks.py",
-    "src/docstore/storage/*",
     "src/docstore/scripts/*",
     "src/docstore/embeddings/__init__.py",
     "src/docstore/llm/base.py",

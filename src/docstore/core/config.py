@@ -102,7 +102,12 @@ class OpenSearchConfig(BaseModel):
     hybrid_pipeline: str = "docstore-hybrid"
     vector_dimension: int = 768
     vector_space_type: str = "cosinesimil"
+    vector_engine: str = "faiss"
+    knn_ef_construction: int = 256
+    knn_m: int = 16
     hybrid_weights: list[float] = Field(default_factory=lambda: [0.4, 0.6])
+    hybrid_normalization: str = "min_max"
+    hybrid_combination: str = "arithmetic_mean"
 
 
 class MinioConfig(BaseModel):

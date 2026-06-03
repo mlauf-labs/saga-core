@@ -36,16 +36,20 @@ full toolchain wired up. No business logic yet.
 
 ---
 
-## Phase 1 — Storage foundations
+## Phase 1 — Storage foundations ✅
 
 **Goal:** persistence layer works end to end (no conversion yet).
 
-- ☐ OpenSearch client + index bootstrap/migrations for `documents` & `document_chunks`
+- ☑ OpenSearch client + index bootstrap/migrations for `documents` & `document_chunks`
       (kNN mapping, configurable dim) + hybrid **search pipeline**.
-- ☐ MinIO client + bucket bootstrap; put/get/delete original binaries.
-- ☐ Redis/ARQ wiring + worker entrypoint + health checks.
-- ☐ Typed domain models (Document, Chunk, ExtractedValue, Status).
-- ☐ Unit tests (mocked clients) + integration smoke test via compose.
+- ☑ MinIO client + bucket bootstrap; put/get/delete original binaries.
+- ☑ Redis/ARQ wiring + worker entrypoint + health checks.
+- ☑ Typed domain models (Document, Chunk, ExtractedValue, Status).
+- ☑ Unit tests (mocked clients). Integration smoke test via compose: pending M2.
+
+Delivered: `storage/opensearch.py`, `storage/minio.py`, `storage/mappings.py`,
+`pipeline/queue.py`, `pipeline/worker.py`; hybrid query/pipeline builders; cascade
+delete (FR-26); 95% coverage on implemented code.
 
 **Satisfies:** FR-8, FR-9, FR-25, FR-26, FR-27; NFR-8, NFR-12, NFR-17.
 

@@ -40,8 +40,13 @@ opensearch:
   # Must match the active embedding model (FR-27). Changing requires reindex.
   vector_dimension: 768
   vector_space_type: cosinesimil
+  vector_engine: faiss
+  knn_ef_construction: 256
+  knn_m: 16
   # Relative weights for hybrid score combination [lexical, semantic].
   hybrid_weights: [0.4, 0.6]
+  hybrid_normalization: min_max
+  hybrid_combination: arithmetic_mean
 
 minio:
   endpoint: ${MINIO_ENDPOINT:-minio:9000}
