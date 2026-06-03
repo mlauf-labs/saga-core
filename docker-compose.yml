@@ -5,7 +5,8 @@
 #   docker compose up -d
 #
 # Image tags use `latest` to follow the "newest versions" requirement (NFR-4).
-# At release time, tags are pinned for reproducibility (NFR-35, Phase 8).
+# For reproducible production deploys, pin images in a docker-compose.prod.yml
+# override (NFR-35) — see docs/operations.md ("Image pinning").
 
 name: docstore
 
@@ -43,6 +44,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
 
   worker:

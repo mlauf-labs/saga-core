@@ -178,14 +178,16 @@ Delivered: `OpenSearchStore.scroll_documents`, `api/cursor.py`, `api/routes/expo
 
 ---
 
-## Phase 8 — Hardening, docs & release
+## Phase 8 — Hardening, docs & release ✅
 
 **Goal:** production-readiness + first public release.
 
-- ☐ Comprehensive interface docs (REST + MCP), usage & operations guides.
-- ☐ Coverage gate, security review, error-message audit, log-structure review.
-- ☐ Image pinning, healthcheck/startup ordering, resource/hardware notes.
-- ☐ `release/1.0.0` → changelog from Conventional Commits → tag on `main`.
+- ☑ Comprehensive interface docs (REST + MCP + backup), configuration reference,
+      operations/deployment guide, and a docs index.
+- ☑ Coverage gate (≥80%), security review (prod OpenSearch security + TLS, secrets,
+      least privilege), error-message + log-structure review.
+- ☑ API healthcheck + startup ordering; image-pinning guidance + resource sizing.
+- ☑ `release/1.0.0` → `CHANGELOG.md` (Conventional Commits) → tag `v1.0.0` on `main`.
 
 **Satisfies:** NFR-22..28, NFR-31, NFR-35; FR overall.
 
