@@ -226,6 +226,57 @@ class OpenSearchStore:
                 f"Failed to delete document '{document_id}' and its chunks: {exc}"
             ) from exc
 
+    async def category_terms(self) -> list[tuple[str, int]]:
+        """Return all category paths with their document counts (FR-22).
+
+        Uses a terms aggregation over ``category_paths`` (a materialised-path field),
+        from which the tree is derived in the service layer.
+        """
+        body = {
+            "size": 0,
+            "aggs": {"paths": {"terms": {"field": "category_paths", "size": 10000}}},
+        }
+        try:
+            response = await self.client.search(index=self._config.document_index, body=body)
+        except Exception as exc:
+            raise StorageError(f"Failed to aggregate category paths: {exc}") from exc
+        buckets = response["aggregations"]["paths"]["buckets"]
+        return [(bucket["key"], int(bucket["doc_count"])) for bucket in buckets]
+
+    async def list_documents_in_category(
+        self, *, category_path: str, include_subtree: bool, page: int, page_size: int
+    ) -> tuple[list[Document], int]:
+        """Return a page of documents in a category branch (FR-22)."""
+        if include_subtree:
+            category_filter: dict[str, Any] = {
+                "bool": {
+                    "should": [
+                        {"term": {"category_paths": category_path}},
+                        {"prefix": {"category_paths": f"{category_path}/"}},
+                    ],
+                    "minimum_should_match": 1,
+                }
+            }
+        else:
+            category_filter = {"term": {"category_paths": category_path}}
+        body = {
+            "from": max(page - 1, 0) * page_size,
+            "size": page_size,
+            "sort": [{"created_at": {"order": "desc"}}],
+            "query": {"bool": {"filter": [category_filter]}},
+        }
+        try:
+            response = await self.client.search(index=self._config.document_index, body=body)
+        except Exception as exc:
+            raise StorageError(
+                f"Failed to list documents in category '{category_path}': {exc}"
+            ) from exc
+        hits = response["hits"]["hits"]
+        total = response["hits"]["total"]
+        total_count = total["value"] if isinstance(total, dict) else int(total)
+        documents = [Document.model_validate(hit["_source"]) for hit in hits]
+        return documents, total_count
+
     async def hybrid_search(
         self,
         *,

@@ -15,10 +15,12 @@ from fastapi import FastAPI
 from docstore import __version__
 from docstore.api.dependencies import Services
 from docstore.api.errors import register_exception_handlers
-from docstore.api.routes import documents
+from docstore.api.routes import documents, search
 from docstore.core.config import AppConfig, load_config
 from docstore.core.logging import configure_logging, get_logger
+from docstore.embeddings import build_embedding_provider, load_embeddings_config
 from docstore.pipeline.queue import create_redis_pool
+from docstore.search import SearchService
 from docstore.storage import MinioStore, OpenSearchStore
 
 if TYPE_CHECKING:
@@ -42,15 +44,29 @@ def create_app(config: AppConfig | None = None, services: Services | None = None
         opensearch = OpenSearchStore(cfg.opensearch)
         minio = MinioStore(cfg.minio)
         queue = await create_redis_pool(cfg.redis)
+        embedder = build_embedding_provider(load_embeddings_config())
+        search_service = SearchService(
+            opensearch=opensearch,
+            embedder=embedder,
+            default_top_k=cfg.mcp.default_top_k,
+            max_top_k=cfg.mcp.max_top_k,
+        )
         await opensearch.bootstrap()
         await minio.bootstrap()
-        app.state.services = Services(config=cfg, opensearch=opensearch, minio=minio, queue=queue)
+        app.state.services = Services(
+            config=cfg,
+            opensearch=opensearch,
+            minio=minio,
+            queue=queue,
+            search=search_service,
+        )
         _log.info("api_ready")
         try:
             yield
         finally:
             await opensearch.close()
             await queue.aclose()
+            await embedder.aclose()
 
     app = FastAPI(
         title="DocStore API",
@@ -64,6 +80,7 @@ def create_app(config: AppConfig | None = None, services: Services | None = None
 
     register_exception_handlers(app)
     app.include_router(documents.router)
+    app.include_router(search.router)
 
     @app.get("/health", tags=["system"])
     async def health() -> dict[str, str]:

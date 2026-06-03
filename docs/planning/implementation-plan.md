@@ -137,16 +137,22 @@ Coverage 94%.
 
 ---
 
-## Phase 6 — Search (REST + MCP)
+## Phase 6 — Search (REST + MCP) ✅
 
 **Goal:** performant hybrid search + tree browsing for agents.
 
-- ☐ Hybrid query builder (BM25 + kNN + filters) using the search pipeline.
-- ☐ REST search + category-tree endpoints.
-- ☐ MCP server (Streamable HTTP, Bearer) with tools: `hybrid_search`,
-      `get_category_tree`, `list_documents_in_category`, `get_document`.
-- ☐ MCP tool descriptions loaded from `prompts/`.
-- ☐ Performance pass (pooling, bounded top_k, optional cache) + latency tests.
+- ☑ Hybrid query builder (BM25 + kNN + filters) using the search pipeline (Phase 1).
+- ☑ REST endpoints: `POST /search`, `GET /categories/tree`,
+      `GET /categories/{path}/documents`.
+- ☑ MCP server (FastMCP, Streamable HTTP, Bearer middleware) with tools
+      `hybrid_search`, `get_category_tree`, `list_documents_in_category`, `get_document`.
+- ☑ MCP tool descriptions loaded from `prompts/mcp/*.md` (NFR-30).
+- ☑ Performance: warm pooled clients, bounded `top_k`, denormalised chunk filters,
+      stateless HTTP, derived category tree via a single aggregation.
+
+Delivered: `search/{tree,service}.py`, `api/routes/search.py`, `mcp/{server,auth}.py`,
+`mcp/__main__.py`, `OpenSearchStore.category_terms`/`list_documents_in_category`;
+`SearchService` shared by REST + MCP. Coverage 94%.
 
 **Satisfies:** FR-19..24; NFR-10, NFR-12.
 

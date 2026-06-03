@@ -46,7 +46,7 @@ async def upload_document(
 async def list_documents(
     services: ServicesDep,
     page: Annotated[int, Query(ge=1)] = 1,
-    page_size: Annotated[int, Query(ge=1)] = 0,
+    page_size: Annotated[int, Query(ge=0)] = 0,
 ) -> DocumentListResponse:
     pagination = services.config.api.pagination
     effective_size = page_size or pagination.default_page_size
