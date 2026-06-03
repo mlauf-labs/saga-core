@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from docstore import __version__
 from docstore.api.dependencies import Services
 from docstore.api.errors import register_exception_handlers
-from docstore.api.routes import documents, search
+from docstore.api.routes import documents, export, search
 from docstore.core.config import AppConfig, load_config
 from docstore.core.logging import configure_logging, get_logger
 from docstore.embeddings import build_embedding_provider, load_embeddings_config
@@ -81,6 +81,7 @@ def create_app(config: AppConfig | None = None, services: Services | None = None
     register_exception_handlers(app)
     app.include_router(documents.router)
     app.include_router(search.router)
+    app.include_router(export.router)
 
     @app.get("/health", tags=["system"])
     async def health() -> dict[str, str]:

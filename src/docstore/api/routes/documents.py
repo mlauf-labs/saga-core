@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, File, Query, UploadFile, status
+from fastapi import APIRouter, File, Query, Response, UploadFile, status
 
 from docstore.api import service
 from docstore.api.dependencies import AuthDep, ServicesDep
@@ -83,6 +83,23 @@ async def get_document_status(services: ServicesDep, document_id: str) -> Docume
     document = await service.get_document(services, document_id)
     return DocumentStatusResponse(
         document_id=document.document_id, status=document.status, error=document.error
+    )
+
+
+@router.get(
+    "/{document_id}/file",
+    summary="Download the original document binary",
+    response_class=Response,
+)
+async def download_document_file(services: ServicesDep, document_id: str) -> Response:
+    document = await service.get_document(services, document_id)
+    data = await services.minio.get_object(document_id)
+    return Response(
+        content=data,
+        media_type=document.mime_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{document.title}"',
+        },
     )
 
 

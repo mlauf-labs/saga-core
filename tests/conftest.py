@@ -38,6 +38,17 @@ class InMemoryDocumentStore:
         start = (page - 1) * page_size
         return ordered[start : start + page_size], len(ordered)
 
+    async def scroll_documents(
+        self, *, page_size: int, search_after: list[object] | None = None
+    ) -> tuple[list[Document], list[object] | None]:
+        ordered = sorted(self.docs.values(), key=lambda d: d.document_id)
+        offset = int(str(search_after[0])) if search_after else 0
+        page = ordered[offset : offset + page_size]
+        next_cursor: list[object] | None = (
+            [offset + page_size] if len(page) == page_size and page else None
+        )
+        return page, next_cursor
+
 
 class InMemoryBinaryStore:
     """In-memory stand-in for the MinIO binary store."""
