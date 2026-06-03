@@ -7,6 +7,6 @@ OpenSearch (keyword + vector), and expose hybrid search to agents over MCP.
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 __all__ = ["__version__"]

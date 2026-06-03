@@ -1,0 +1,122 @@
+"""Document management operations shared by the REST routes (FR-1/10/11/13).
+
+Kept separate from the FastAPI routing layer so the logic is unit-testable with
+mocked services.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import uuid
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+from docstore.core.errors import ConflictError, NotFoundError, ValidationError
+from docstore.core.logging import get_logger
+from docstore.core.models import Document, DocumentStatus
+from docstore.pipeline.queue import INGEST_JOB
+
+if TYPE_CHECKING:
+    from docstore.api.dependencies import Services
+
+_log = get_logger("docstore.api.service")
+
+
+def compute_content_hash(data: bytes) -> str:
+    """Return the SHA-256 hex digest of ``data`` (used for dedup, FR-13)."""
+    return hashlib.sha256(data).hexdigest()
+
+
+def _validate_upload(data: bytes, max_bytes: int) -> None:
+    if not data:
+        raise ValidationError("Uploaded file is empty.")
+    if len(data) > max_bytes:
+        raise ValidationError(
+            f"Uploaded file is {len(data)} bytes which exceeds the configured "
+            f"maximum of {max_bytes} bytes."
+        )
+
+
+async def create_document(
+    services: Services,
+    *,
+    data: bytes,
+    filename: str,
+    content_type: str,
+    document_id: str | None = None,
+) -> Document:
+    """Validate, deduplicate, store, index and enqueue a new document (FR-1/13)."""
+    _validate_upload(data, services.config.api.max_upload_bytes)
+    content_hash = compute_content_hash(data)
+
+    existing = await services.opensearch.find_by_hash(content_hash)
+    if existing is not None and document_id is None:
+        policy = services.config.dedup.on_duplicate
+        if policy == "reject":
+            raise ConflictError(
+                f"A document with identical content already exists "
+                f"(document_id={existing.document_id}). Dedup policy is 'reject'."
+            )
+        if policy == "replace":
+            await delete_document(services, existing.document_id)
+
+    new_id = document_id or uuid.uuid4().hex
+    object_name = new_id
+    minio_object = await services.minio.put_object(object_name, data, content_type)
+
+    now = datetime.now(UTC)
+    document = Document(
+        document_id=new_id,
+        title=filename,
+        mime_type=content_type,
+        size_bytes=len(data),
+        content_hash=content_hash,
+        minio_object=minio_object,
+        status=DocumentStatus.PENDING,
+        created_at=now,
+        updated_at=now,
+    )
+    await services.opensearch.index_document(document)
+    await services.queue.enqueue_job(INGEST_JOB, new_id)
+    _log.info("document_accepted", document_id=new_id, size_bytes=len(data))
+    return document
+
+
+async def get_document(services: Services, document_id: str) -> Document:
+    """Fetch a document or raise ``NotFoundError``."""
+    document = await services.opensearch.get_document(document_id)
+    if document is None:
+        raise NotFoundError(f"Document '{document_id}' was not found.")
+    return document
+
+
+async def delete_document(services: Services, document_id: str) -> None:
+    """Delete a document's binary, record, and chunks (FR-10/FR-26)."""
+    document = await services.opensearch.get_document(document_id)
+    if document is None:
+        raise NotFoundError(f"Document '{document_id}' was not found.")
+    await services.minio.remove_object(document_id)
+    await services.opensearch.delete_document(document_id)
+    _log.info("document_deleted", document_id=document_id)
+
+
+async def replace_document(
+    services: Services,
+    document_id: str,
+    *,
+    data: bytes,
+    filename: str,
+    content_type: str,
+) -> Document:
+    """Update a document by delete + re-create (FR-11)."""
+    await delete_document(services, document_id)
+    new_id = (
+        document_id if services.config.dedup.document_id_on_update == "keep" else uuid.uuid4().hex
+    )
+    return await create_document(
+        services,
+        data=data,
+        filename=filename,
+        content_type=content_type,
+        document_id=new_id,
+    )

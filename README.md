@@ -7,8 +7,9 @@
 [![CI](https://github.com/OWNER/docstore/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/docstore/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-> **Status:** early development. Phase 0 (project bootstrap) is complete; features
-> land per the [implementation plan](docs/planning/implementation-plan.md).
+> **Status:** 1.0.0 — the full ingestion-to-search pipeline is implemented (storage,
+> REST API, conversion, LLM analysis, chunking/embeddings/indexing, hybrid search +
+> MCP, and backup/export). See the [implementation plan](docs/planning/implementation-plan.md).
 
 ---
 
@@ -87,9 +88,13 @@ Prompts and MCP tool descriptions live in [`prompts/`](prompts/).
 
 ## Documentation
 
-- [Functional requirements](docs/requirements/01-functional-requirements.md)
-- [Non-functional requirements](docs/requirements/02-non-functional-requirements.md)
-- [Architecture](docs/requirements/03-architecture.md)
+Start at the [documentation index](docs/README.md).
+
+- [Operations & deployment](docs/operations.md) · [Configuration reference](docs/configuration.md)
+- [REST API](docs/api/rest-api.md) · [MCP tools](docs/api/mcp-tools.md) · [Backup](docs/api/backup.md)
+- [Functional requirements](docs/requirements/01-functional-requirements.md) ·
+  [Non-functional requirements](docs/requirements/02-non-functional-requirements.md) ·
+  [Architecture](docs/requirements/03-architecture.md)
 - [Implementation plan](docs/planning/implementation-plan.md)
 - [Contributing](CONTRIBUTING.md) · [Guide for AI agents](AGENTS.md)
 

@@ -102,7 +102,12 @@ class OpenSearchConfig(BaseModel):
     hybrid_pipeline: str = "docstore-hybrid"
     vector_dimension: int = 768
     vector_space_type: str = "cosinesimil"
+    vector_engine: str = "faiss"
+    knn_ef_construction: int = 256
+    knn_m: int = 16
     hybrid_weights: list[float] = Field(default_factory=lambda: [0.4, 0.6])
+    hybrid_normalization: str = "min_max"
+    hybrid_combination: str = "arithmetic_mean"
 
 
 class MinioConfig(BaseModel):
@@ -123,6 +128,15 @@ class ChunkingConfig(BaseModel):
     tokenizer: str = "cl100k_base"
 
 
+class DedupConfig(BaseModel):
+    """Duplicate-handling behaviour (FR-13) and update semantics (FR-11)."""
+
+    # reject | replace | allow
+    on_duplicate: str = "replace"
+    # keep | new
+    document_id_on_update: str = "keep"
+
+
 class AppConfig(BaseModel):
     """Root application configuration assembled from the YAML files."""
 
@@ -135,6 +149,7 @@ class AppConfig(BaseModel):
     minio: MinioConfig = Field(default_factory=MinioConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
     chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
+    dedup: DedupConfig = Field(default_factory=DedupConfig)
 
 
 def load_config(config_dir: Path | str = "config") -> AppConfig:
@@ -143,7 +158,7 @@ def load_config(config_dir: Path | str = "config") -> AppConfig:
     data = load_yaml(base / "config.yaml")
     merged: dict[str, Any] = {}
     merged.update(data.get("app", {}))
-    for key in ("api", "mcp", "security", "opensearch", "minio", "redis", "chunking"):
+    for key in ("api", "mcp", "security", "opensearch", "minio", "redis", "chunking", "dedup"):
         if key in data:
             merged[key] = data[key]
     return AppConfig.model_validate(merged)

@@ -1,0 +1,130 @@
+# REST API reference
+
+> Base URL: `http://<host>:8000` · Interactive docs: `/docs` (Swagger, toggleable).
+
+All endpoints except `/health` require a **Bearer token** (FR-35):
+
+```
+Authorization: Bearer <token>
+```
+
+Tokens are configured via `DOCSTORE_API_TOKENS` (comma-separated). Invalid/missing
+tokens return `401` with an `auth_error` body.
+
+## Error format
+
+Every error returns a JSON envelope (NFR-15):
+
+```json
+{ "code": "not_found", "message": "Document 'abc' was not found." }
+```
+
+| HTTP | `code` | When |
+|------|--------|------|
+| 400 | `validation_error` | empty file, file too large |
+| 401 | `auth_error` | missing/invalid Bearer token |
+| 404 | `not_found` | unknown document id |
+| 409 | `conflict` | duplicate upload while dedup policy is `reject` |
+| 422 | `conversion_error` | document could not be converted (later phases) |
+| 502/503 | `provider_error` / `storage_error` | upstream/provider/storage failure |
+
+## Endpoints
+
+### `GET /health`
+Liveness probe. Returns `{ "status": "ok", "version": "..." }`. No auth.
+
+### `POST /documents`
+Upload a document for **asynchronous** ingestion (FR-1). `multipart/form-data` with a
+single `file` field.
+
+- Validates size (`api.max_upload_bytes`) and non-emptiness.
+- Computes a SHA-256 content hash and applies the dedup policy
+  (`dedup.on_duplicate`: `reject` | `replace` | `allow`, FR-13).
+- Stores the binary in MinIO, creates a `pending` document record, and enqueues the
+  ingestion job.
+
+Response `202 Accepted`:
+
+```json
+{ "document_id": "…", "status": "pending", "title": "invoice.pdf" }
+```
+
+### `GET /documents`
+Paginated list (newest first), FR-28 / NFR-13.
+
+Query: `page` (≥1, default 1), `page_size` (default `pagination.default_page_size`,
+capped at `pagination.max_page_size`). Returns `{ items, page, page_size, total }`.
+List items omit `content_markdown`.
+
+### `GET /documents/{document_id}`
+Full document record. Query `include_content` (bool, default `true`) controls whether
+`content_markdown` is included. `404` if unknown.
+
+### `GET /documents/{document_id}/status`
+Lightweight status view (FR-12): `{ document_id, status, error }`. `status` is one of
+`pending | converting | analyzing | indexing | ready | failed`.
+
+### `PUT /documents/{document_id}`
+Replace a document = **delete + re-create** (FR-11). `multipart/form-data` with `file`.
+The id is preserved or regenerated per `dedup.document_id_on_update` (`keep` | `new`).
+Returns `202 Accepted` like upload.
+
+### `DELETE /documents/{document_id}`
+Delete the binary (MinIO), the document record, and **all** its chunks (FR-10/FR-26).
+Returns `204 No Content`. `404` if unknown.
+
+### `POST /search`
+Hybrid (keyword + semantic) search (FR-19/20/21). JSON body:
+
+```json
+{
+  "query": "annual liability premium",
+  "top_k": 10,
+  "doc_type": "insurance_policy",
+  "category_path": "Insurance/Liability",
+  "filters": { "contract_number": "C-12345" }
+}
+```
+
+`top_k` is bounded by `mcp.max_top_k`. Returns `{ query, hits }` where each hit has
+`document_id`, `chunk_id`, `snippet`, `score`, `title`, `doc_type`, `category_paths`.
+
+### `GET /categories/tree`
+Return the derived hierarchical category tree (FR-22). Query: `prefix` (restrict to a
+subtree), `max_depth` (≥1). Returns `{ tree: [CategoryNode...] }` where each node has
+`path`, `name`, `document_count` (subtree count), and `children`.
+
+### `GET /categories/{category_path}/documents`
+List documents in a category branch (FR-22). The path is the category path, e.g.
+`/categories/Insurance/Health/documents`. Query: `include_subtree` (default `true`),
+`page`, `page_size`. Returns a paginated `DocumentListResponse`.
+
+### `GET /documents/{document_id}/file`
+Download the original document binary (used by backups). Streams the bytes with the
+stored `mime_type` and a `Content-Disposition` attachment header. `404` if unknown.
+
+### `GET /export/documents`
+Stream **all** documents for backup with cursor pagination (FR-28). Query: `cursor`
+(opaque token from the previous page; omit for the first page) and `page_size`.
+Returns `{ items, next_cursor }` where `items` are full `DocumentResponse` objects
+(including `content_markdown`) and `next_cursor` is `null` on the last page.
+
+```bash
+# Walk all pages
+cursor=""; while :; do
+  page=$(curl -s -H "Authorization: Bearer $TOKEN" \
+    "http://localhost:8000/export/documents?page_size=50&cursor=$cursor")
+  # ...process page.items...
+  cursor=$(echo "$page" | jq -r '.next_cursor // empty'); [ -z "$cursor" ] && break
+done
+```
+
+Prefer the bundled script for full backups: `docstore-backup` (see
+[`backup.md`](backup.md)).
+
+## Notes
+
+- Ingestion (conversion → LLM analysis → chunking → embedding → indexing) runs on the
+  background worker; poll the status endpoint until `ready` or `failed`.
+- Agents use the equivalent **MCP tools** (see [`mcp-tools.md`](mcp-tools.md)).
+- Backup export arrives in Phase 7.
