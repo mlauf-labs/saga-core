@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from docstore.api.app import create_app
 from docstore.api.dependencies import Services
 from docstore.core.config import AppConfig
-from docstore.core.models import Document
+from docstore.core.models import CategoryNode, Document, SearchHit
 
 TEST_TOKEN = "test-token"
 
@@ -66,15 +66,62 @@ class FakeQueue:
         self.jobs.append((function, args))
 
 
+class FakeSearch:
+    """In-memory stand-in for the search service."""
+
+    def __init__(self, documents: dict[str, Document]) -> None:
+        self._documents = documents
+
+    async def hybrid_search(
+        self,
+        *,
+        query: str,
+        top_k: int | None = None,
+        doc_type: str | None = None,
+        category_path: str | None = None,
+        filters: dict[str, str] | None = None,
+    ) -> list[SearchHit]:
+        return [
+            SearchHit(
+                document_id=doc.document_id,
+                chunk_id=f"{doc.document_id}:0",
+                snippet=query,
+                score=1.0,
+                title=doc.title,
+                doc_type=doc.doc_type,
+                category_paths=doc.category_paths,
+            )
+            for doc in self._documents.values()
+        ][: top_k or 10]
+
+    async def get_category_tree(
+        self, *, prefix: str | None = None, max_depth: int | None = None
+    ) -> list[CategoryNode]:
+        return [CategoryNode(path="Finance", name="Finance", document_count=1)]
+
+    async def list_documents_in_category(
+        self,
+        *,
+        category_path: str,
+        include_subtree: bool = True,
+        page: int = 1,
+        page_size: int = 25,
+    ) -> tuple[list[Document], int]:
+        docs = [d for d in self._documents.values() if category_path in d.category_paths]
+        return docs, len(docs)
+
+
 @pytest.fixture
 def services() -> Services:
     config = AppConfig()
     config.security.bearer_tokens = TEST_TOKEN
+    document_store = InMemoryDocumentStore()
     return Services(
         config=config,
-        opensearch=InMemoryDocumentStore(),
+        opensearch=document_store,
         minio=InMemoryBinaryStore(),
         queue=FakeQueue(),
+        search=FakeSearch(document_store.docs),
     )
 
 

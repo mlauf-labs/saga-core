@@ -6,7 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from docstore.core.models import Document, DocumentStatus, ExtractedValue
+from docstore.core.models import CategoryNode, Document, DocumentStatus, ExtractedValue, SearchHit
 
 
 class ErrorResponse(BaseModel):
@@ -65,3 +65,30 @@ class DocumentListResponse(BaseModel):
     page: int
     page_size: int
     total: int
+
+
+class SearchRequest(BaseModel):
+    """Hybrid search request (FR-19/20)."""
+
+    query: str = Field(min_length=1, description="Natural-language query or keywords.")
+    top_k: int | None = Field(default=None, ge=1, description="Number of results.")
+    doc_type: str | None = Field(default=None, description="Restrict to a document type.")
+    category_path: str | None = Field(
+        default=None, description="Restrict to a category subtree, e.g. 'Insurance/Health'."
+    )
+    filters: dict[str, str] = Field(
+        default_factory=dict, description="Match extracted values, e.g. {invoice_number: '12'}."
+    )
+
+
+class SearchResponse(BaseModel):
+    """Ranked hybrid-search results (FR-21)."""
+
+    query: str
+    hits: list[SearchHit]
+
+
+class CategoryTreeResponse(BaseModel):
+    """The derived category tree (FR-22)."""
+
+    tree: list[CategoryNode]

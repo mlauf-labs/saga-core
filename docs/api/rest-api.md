@@ -73,8 +73,35 @@ Returns `202 Accepted` like upload.
 Delete the binary (MinIO), the document record, and **all** its chunks (FR-10/FR-26).
 Returns `204 No Content`. `404` if unknown.
 
+### `POST /search`
+Hybrid (keyword + semantic) search (FR-19/20/21). JSON body:
+
+```json
+{
+  "query": "annual liability premium",
+  "top_k": 10,
+  "doc_type": "insurance_policy",
+  "category_path": "Insurance/Liability",
+  "filters": { "contract_number": "C-12345" }
+}
+```
+
+`top_k` is bounded by `mcp.max_top_k`. Returns `{ query, hits }` where each hit has
+`document_id`, `chunk_id`, `snippet`, `score`, `title`, `doc_type`, `category_paths`.
+
+### `GET /categories/tree`
+Return the derived hierarchical category tree (FR-22). Query: `prefix` (restrict to a
+subtree), `max_depth` (≥1). Returns `{ tree: [CategoryNode...] }` where each node has
+`path`, `name`, `document_count` (subtree count), and `children`.
+
+### `GET /categories/{category_path}/documents`
+List documents in a category branch (FR-22). The path is the category path, e.g.
+`/categories/Insurance/Health/documents`. Query: `include_subtree` (default `true`),
+`page`, `page_size`. Returns a paginated `DocumentListResponse`.
+
 ## Notes
 
 - Ingestion (conversion → LLM analysis → chunking → embedding → indexing) runs on the
   background worker; poll the status endpoint until `ready` or `failed`.
-- Search and category-tree endpoints arrive in Phase 6; backup export in Phase 7.
+- Agents use the equivalent **MCP tools** (see [`mcp-tools.md`](mcp-tools.md)).
+- Backup export arrives in Phase 7.

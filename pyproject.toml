@@ -107,11 +107,7 @@ source = ["docstore"]
 # the >=80% gate (NFR-23) applies to the new code.
 omit = [
     "*/__main__.py",
-    "src/docstore/mcp/server.py",
     "src/docstore/scripts/*",
-    "src/docstore/embeddings/__init__.py",
-    "src/docstore/llm/base.py",
-    "src/docstore/chunking/__init__.py",
 ]
 
 [tool.coverage.report]

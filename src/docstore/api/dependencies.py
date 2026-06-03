@@ -13,7 +13,7 @@ from docstore.core.errors import DocStoreError
 
 if TYPE_CHECKING:
     from docstore.core.config import AppConfig
-    from docstore.core.models import Document
+    from docstore.core.models import CategoryNode, Document, SearchHit
 
 
 class DocumentStore(Protocol):
@@ -40,6 +40,33 @@ class JobQueue(Protocol):
     async def enqueue_job(self, function: str, *args: Any) -> Any: ...  # noqa: ANN401
 
 
+class SearchEngine(Protocol):
+    """Search operations the API depends on (FR-19/22)."""
+
+    async def hybrid_search(
+        self,
+        *,
+        query: str,
+        top_k: int | None = ...,
+        doc_type: str | None = ...,
+        category_path: str | None = ...,
+        filters: dict[str, str] | None = ...,
+    ) -> list[SearchHit]: ...
+
+    async def get_category_tree(
+        self, *, prefix: str | None = ..., max_depth: int | None = ...
+    ) -> list[CategoryNode]: ...
+
+    async def list_documents_in_category(
+        self,
+        *,
+        category_path: str,
+        include_subtree: bool = ...,
+        page: int = ...,
+        page_size: int = ...,
+    ) -> tuple[list[Document], int]: ...
+
+
 @dataclass
 class Services:
     """Container for shared, request-scoped services held on ``app.state``."""
@@ -48,6 +75,7 @@ class Services:
     opensearch: DocumentStore
     minio: BinaryStore
     queue: JobQueue
+    search: SearchEngine
 
 
 def get_services(request: Request) -> Services:

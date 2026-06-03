@@ -207,6 +207,51 @@ async def test_list_documents_total_int(store: OpenSearchStore, fake_client: Mag
     assert docs == []
 
 
+async def test_category_terms(store: OpenSearchStore, fake_client: MagicMock) -> None:
+    fake_client.search.return_value = {
+        "aggregations": {
+            "paths": {
+                "buckets": [
+                    {"key": "Finance/Invoices", "doc_count": 3},
+                    {"key": "Insurance", "doc_count": 1},
+                ]
+            }
+        }
+    }
+    terms = await store.category_terms()
+    assert terms == [("Finance/Invoices", 3), ("Insurance", 1)]
+
+
+async def test_list_documents_in_category_subtree(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    fake_client.search.return_value = {
+        "hits": {
+            "total": {"value": 1},
+            "hits": [{"_source": _make_document().model_dump(mode="json")}],
+        }
+    }
+    _docs, total = await store.list_documents_in_category(
+        category_path="Finance", include_subtree=True, page=1, page_size=10
+    )
+    assert total == 1
+    query = fake_client.search.await_args.kwargs["body"]["query"]
+    # Subtree search should use a bool/should with a prefix clause.
+    assert "should" in query["bool"]["filter"][0]["bool"]
+
+
+async def test_list_documents_in_category_exact(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    fake_client.search.return_value = {"hits": {"total": 0, "hits": []}}
+    docs, total = await store.list_documents_in_category(
+        category_path="Finance", include_subtree=False, page=1, page_size=10
+    )
+    assert (docs, total) == ([], 0)
+    query = fake_client.search.await_args.kwargs["body"]["query"]
+    assert query["bool"]["filter"][0] == {"term": {"category_paths": "Finance"}}
+
+
 async def test_close(store: OpenSearchStore, fake_client: MagicMock) -> None:
     await store.close()
     fake_client.close.assert_awaited_once()
