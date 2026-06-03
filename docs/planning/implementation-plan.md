@@ -75,15 +75,22 @@ auth, store Protocols), `api/errors.py` (DocStoreError → HTTP), `api/schemas.p
 
 ---
 
-## Phase 3 — Conversion services integration
+## Phase 3 — Conversion services integration ✅
 
 **Goal:** convert any supported format to Markdown via the containerised services.
 
-- ☐ Docling + Kreuzberg HTTP clients (typed, retries, timeouts).
-- ☐ Converter router driven by `converters.yaml` (PDF→Docling, else→Kreuzberg).
-- ☐ OCR config (languages) surfaced via YAML.
-- ☐ Worker stage: download binary → convert → store Markdown.
-- ☐ Unit tests for routing + client adapters (mocked HTTP); compose integration test.
+- ☑ Docling + Kreuzberg HTTP clients (typed, tenacity retries, timeouts).
+- ☑ Converter registry driven by `converters.yaml` (PDF→Docling, else→Kreuzberg),
+      with startup validation of routing targets.
+- ☑ OCR config (enabled + languages) surfaced via YAML per service.
+- ☑ Worker stage: download binary → convert → store Markdown; status transitions
+      (converting → ready / failed with actionable error).
+- ☑ Unit tests for routing, client adapters (respx-mocked HTTP), and the worker
+      stage. Compose integration test: pending M2.
+
+Delivered: `converters/{config,base,docling,kreuzberg,registry}.py`,
+`pipeline/stages.py`, `pipeline/tasks.py` (orchestration), `OpenSearchStore.update_content`.
+Coverage 94%.
 
 **Satisfies:** FR-3, FR-4; NFR-7, NFR-14, NFR-15.
 

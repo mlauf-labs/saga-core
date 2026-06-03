@@ -142,6 +142,23 @@ class OpenSearchStore:
                 f"Failed to update status for document '{document_id}': {exc}"
             ) from exc
 
+    async def update_content(self, document_id: str, content_markdown: str) -> None:
+        """Persist the converted Markdown text on a document record (FR-4)."""
+        body = {
+            "doc": {
+                "content_markdown": content_markdown,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+        }
+        try:
+            await self.client.update(
+                index=self._config.document_index, id=document_id, body=body, refresh=True
+            )
+        except Exception as exc:
+            raise StorageError(
+                f"Failed to persist converted content for document '{document_id}': {exc}"
+            ) from exc
+
     async def index_chunks(self, chunks: list[Chunk]) -> int:
         """Bulk-index chunk/vector records. Returns the number indexed."""
         if not chunks:

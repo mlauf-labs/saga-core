@@ -166,9 +166,7 @@ async def test_find_by_hash_none(store: OpenSearchStore, fake_client: MagicMock)
     assert await store.find_by_hash("nope") is None
 
 
-async def test_list_documents_total_dict(
-    store: OpenSearchStore, fake_client: MagicMock
-) -> None:
+async def test_list_documents_total_dict(store: OpenSearchStore, fake_client: MagicMock) -> None:
     fake_client.search.return_value = {
         "hits": {
             "total": {"value": 5},
@@ -180,9 +178,7 @@ async def test_list_documents_total_dict(
     assert len(docs) == 1
 
 
-async def test_list_documents_total_int(
-    store: OpenSearchStore, fake_client: MagicMock
-) -> None:
+async def test_list_documents_total_int(store: OpenSearchStore, fake_client: MagicMock) -> None:
     fake_client.search.return_value = {"hits": {"total": 2, "hits": []}}
     docs, total = await store.list_documents(page=2, page_size=10)
     assert total == 2
