@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from docstore.converters import ConverterRegistry, load_converters_config
 from docstore.core.config import load_config
 from docstore.core.logging import configure_logging, get_logger
 from docstore.pipeline.queue import redis_settings
@@ -26,11 +27,13 @@ async def on_startup(ctx: dict[str, Any]) -> None:
     configure_logging()
     opensearch = OpenSearchStore(config.opensearch)
     minio = MinioStore(config.minio)
+    converters = ConverterRegistry(load_converters_config())
     await opensearch.bootstrap()
     await minio.bootstrap()
     ctx["config"] = config
     ctx["opensearch"] = opensearch
     ctx["minio"] = minio
+    ctx["converters"] = converters
     _log.info("worker_ready")
 
 
@@ -38,6 +41,9 @@ async def on_shutdown(ctx: dict[str, Any]) -> None:
     opensearch: OpenSearchStore | None = ctx.get("opensearch")
     if opensearch is not None:
         await opensearch.close()
+    converters: ConverterRegistry | None = ctx.get("converters")
+    if converters is not None:
+        await converters.aclose()
     _log.info("worker_stopped")
 
 
