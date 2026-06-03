@@ -11,9 +11,12 @@ from typing import TYPE_CHECKING
 
 from docstore.core.errors import NotFoundError
 from docstore.core.logging import get_logger
+from docstore.core.models import Chunk
 
 if TYPE_CHECKING:
+    from docstore.chunking import MarkdownChunker
     from docstore.converters import ConverterRegistry
+    from docstore.embeddings import EmbeddingProvider
     from docstore.llm import DocumentAnalyzer
     from docstore.llm.schemas import AnalysisResult
     from docstore.storage import MinioStore, OpenSearchStore
@@ -75,3 +78,39 @@ async def analyze_metadata(
         categories=len(result.category_paths),
     )
     return result
+
+
+async def index_chunks(
+    *,
+    document_id: str,
+    markdown: str,
+    doc_type: str | None,
+    category_paths: list[str],
+    opensearch: OpenSearchStore,
+    chunker: MarkdownChunker,
+    embedder: EmbeddingProvider,
+) -> int:
+    """Chunk the Markdown, embed each chunk, and index the chunk/vector records (FR-6/7/8).
+
+    Returns the number of chunks indexed.
+    """
+    texts = chunker.split(markdown)
+    if not texts:
+        _log.warning("no_chunks", document_id=document_id)
+        return 0
+    vectors = await embedder.embed(texts)
+    chunks = [
+        Chunk(
+            chunk_id=f"{document_id}:{ordinal}",
+            document_id=document_id,
+            ordinal=ordinal,
+            snippet=text,
+            embedding=vector,
+            doc_type=doc_type,
+            category_paths=category_paths,
+        )
+        for ordinal, (text, vector) in enumerate(zip(texts, vectors, strict=True))
+    ]
+    indexed = await opensearch.index_chunks(chunks)
+    _log.info("chunks_indexed", document_id=document_id, count=indexed)
+    return indexed

@@ -116,14 +116,22 @@ Delivered: `llm/{config,providers,schemas,analyzer}.py`, `pipeline/stages.analyz
 
 ---
 
-## Phase 5 — Chunking & embeddings & indexing
+## Phase 5 — Chunking & embeddings & indexing ✅
 
 **Goal:** complete the ingestion pipeline into the vector index.
 
-- ☐ Markdown-aware splitter + token-splitter fallback; configurable max size/overlap.
-- ☐ Embed chunks (warm session, batching).
-- ☐ Upsert document + chunk records; enforce referential integrity on delete.
-- ☐ End-to-end pipeline test (upload → ready) via compose.
+- ☑ Markdown-header splitter + token-splitter fallback; configurable max size/overlap;
+      injectable token length function (FR-6).
+- ☑ Embedding provider abstraction + Ollama/OpenAI/Azure adapters with batching (FR-7).
+- ☑ Build + bulk-index chunk records referencing the document; referential integrity
+      on delete already enforced (Phase 1, FR-8/26).
+- ☑ Unit tests (chunker, embeddings mocked, indexing stage). End-to-end compose test:
+      pending M3.
+
+Delivered: `chunking/__init__.py` (MarkdownChunker), `embeddings/{base,config,providers}.py`,
+`pipeline/stages.index_chunks`; chunker+embedder wired into the worker; ingest now runs
+`converting → analyzing → indexing → ready`; embedding/index dimension-mismatch warning.
+Coverage 94%.
 
 **Satisfies:** FR-6, FR-7, FR-8; NFR-10..12.
 
