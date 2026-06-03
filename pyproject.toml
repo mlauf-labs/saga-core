@@ -1,6 +1,6 @@
 [project]
 name = "docstore"
-version = "0.1.0"
+version = "1.0.0"
 description = "A document store for RAG agents: ingest, convert, enrich, index, and hybrid-search any document."
 readme = "README.md"
 requires-python = ">=3.12"
