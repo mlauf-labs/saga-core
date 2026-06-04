@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from docstore import __version__
 from docstore.api.dependencies import Services
@@ -77,6 +78,15 @@ def create_app(config: AppConfig | None = None, services: Services | None = None
         redoc_url="/redoc" if cfg.api.enable_swagger else None,
         openapi_url="/openapi.json" if cfg.api.enable_swagger else None,
     )
+
+    if cfg.api.cors_allow_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cfg.api.cors_allow_origins,
+            allow_credentials=cfg.api.cors_allow_credentials,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     register_exception_handlers(app)
     app.include_router(documents.router)

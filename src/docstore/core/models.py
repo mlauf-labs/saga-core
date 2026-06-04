@@ -62,6 +62,8 @@ class Chunk(BaseModel):
     ordinal: int
     snippet: str
     embedding: list[float]
+    # Denormalised document title for keyword search/filtering on the chunk index.
+    title: str = ""
     doc_type: str | None = None
     category_paths: list[str] = Field(default_factory=list)
     # Denormalised extracted values as ``key=value`` terms for fast metadata

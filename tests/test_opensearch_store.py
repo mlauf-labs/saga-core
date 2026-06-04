@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from docstore.core.config import OpenSearchConfig
-from docstore.core.errors import StorageError
+from docstore.core.errors import NotFoundError, StorageError
 from docstore.core.models import Chunk, Document, DocumentStatus
 from docstore.storage import opensearch as os_module
 from docstore.storage.opensearch import OpenSearchStore, _parse_hosts
@@ -39,9 +39,11 @@ def fake_client() -> MagicMock:
     client.delete_by_query = AsyncMock()
     client.search = AsyncMock()
     client.close = AsyncMock()
+    client.update_by_query = AsyncMock()
     client.indices = MagicMock()
     client.indices.exists = AsyncMock(return_value=False)
     client.indices.create = AsyncMock()
+    client.indices.put_mapping = AsyncMock()
     client.transport = MagicMock()
     client.transport.perform_request = AsyncMock()
     return client
@@ -272,6 +274,68 @@ async def test_list_documents_in_category_exact(
     assert (docs, total) == ([], 0)
     query = fake_client.search.await_args.kwargs["body"]["query"]
     assert query["bool"]["filter"][0] == {"term": {"category_paths": "Finance"}}
+
+
+async def test_bootstrap_tops_up_chunk_title_mapping(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    await store.bootstrap()
+    fake_client.indices.put_mapping.assert_awaited_once()
+    body = fake_client.indices.put_mapping.await_args.kwargs["body"]
+    assert "title" in body["properties"]
+
+
+async def test_search_documents(store: OpenSearchStore, fake_client: MagicMock) -> None:
+    fake_client.search.return_value = {
+        "hits": {
+            "total": {"value": 1},
+            "hits": [{"_source": _make_document().model_dump(mode="json")}],
+        }
+    }
+    docs, total = await store.search_documents(
+        query="invoice", page=1, page_size=10, doc_type="invoice", title="Invoice.pdf"
+    )
+    assert total == 1
+    assert docs[0].document_id == "d1"
+    filters = fake_client.search.await_args.kwargs["body"]["query"]["bool"]["filter"]
+    assert {"term": {"doc_type": "invoice"}} in filters
+    assert {"term": {"title.keyword": "Invoice.pdf"}} in filters
+
+
+async def test_update_document_fields_propagates_to_chunks(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    fake_client.get.return_value = {"_source": _make_document().model_dump(mode="json")}
+    await store.update_document_fields(
+        "d1",
+        doc_type="contract",
+        category_paths=["Legal/Contracts"],
+    )
+    fake_client.update.assert_awaited_once()
+    doc_body = fake_client.update.await_args.kwargs["body"]["doc"]
+    assert doc_body["doc_type"] == "contract"
+    # Propagated to chunks because doc_type/category changed.
+    fake_client.update_by_query.assert_awaited_once()
+
+
+async def test_update_document_fields_no_propagation_for_folder_only(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    fake_client.get.return_value = {"_source": _make_document().model_dump(mode="json")}
+    await store.update_document_fields("d1", folder_structure=["A/B"])
+    fake_client.update.assert_awaited_once()
+    fake_client.update_by_query.assert_not_awaited()
+
+
+async def test_update_document_fields_missing_raises(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    fake_client.get.side_effect = None
+    err = Exception("not found")
+    err.status_code = 404  # type: ignore[attr-defined]
+    fake_client.get.side_effect = err
+    with pytest.raises(NotFoundError):
+        await store.update_document_fields("missing", doc_type="x")
 
 
 async def test_close(store: OpenSearchStore, fake_client: MagicMock) -> None:

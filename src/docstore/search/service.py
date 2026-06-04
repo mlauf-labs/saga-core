@@ -12,7 +12,7 @@ from docstore.search.tree import build_category_tree
 from docstore.storage.mappings import build_filters
 
 if TYPE_CHECKING:
-    from docstore.core.models import CategoryNode, Document, SearchHit
+    from docstore.core.models import CategoryNode, Document, ExtractedValue, SearchHit
     from docstore.embeddings import EmbeddingProvider
     from docstore.storage import OpenSearchStore
 
@@ -47,6 +47,7 @@ class SearchService:
         top_k: int | None = None,
         doc_type: str | None = None,
         category_path: str | None = None,
+        title: str | None = None,
         filters: dict[str, str] | None = None,
     ) -> list[SearchHit]:
         """Embed the query and run hybrid (keyword + vector) search (FR-19/20/21)."""
@@ -54,7 +55,10 @@ class SearchService:
         vectors = await self._embedder.embed([query])
         query_vector = vectors[0] if vectors else []
         filter_clauses = build_filters(
-            doc_type=doc_type, category_path=category_path, extracted_values=filters
+            doc_type=doc_type,
+            category_path=category_path,
+            title=title,
+            extracted_values=filters,
         )
         hits = await self._opensearch.hybrid_search(
             query_text=query,
@@ -91,3 +95,45 @@ class SearchService:
     async def get_document(self, document_id: str) -> Document | None:
         """Fetch a single document by id (FR-23)."""
         return await self._opensearch.get_document(document_id)
+
+    async def search_documents(
+        self,
+        *,
+        query: str | None = None,
+        page: int = 1,
+        page_size: int = 25,
+        doc_type: str | None = None,
+        category_path: str | None = None,
+        title: str | None = None,
+        status: str | None = None,
+        filters: dict[str, str] | None = None,
+    ) -> tuple[list[Document], int]:
+        """Keyword search over document title/content/metadata with filters (FR-20)."""
+        return await self._opensearch.search_documents(
+            query=query,
+            page=page,
+            page_size=page_size,
+            doc_type=doc_type,
+            category_path=category_path,
+            title=title,
+            status=status,
+            extracted_values=filters,
+        )
+
+    async def update_document_metadata(
+        self,
+        document_id: str,
+        *,
+        doc_type: str | None = None,
+        extracted_values: list[ExtractedValue] | None = None,
+        folder_structure: list[str] | None = None,
+        category_paths: list[str] | None = None,
+    ) -> Document:
+        """Patch editable document metadata, propagating to chunks (FR-20)."""
+        return await self._opensearch.update_document_fields(
+            document_id,
+            doc_type=doc_type,
+            extracted_values=extracted_values,
+            folder_structure=folder_structure,
+            category_paths=category_paths,
+        )

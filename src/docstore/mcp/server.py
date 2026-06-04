@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 from mcp.server.fastmcp import FastMCP
 
 from docstore.core.logging import get_logger
+from docstore.core.models import ExtractedValue
 from docstore.llm.prompts import PromptLibrary
 
 if TYPE_CHECKING:
@@ -35,7 +36,7 @@ def build_server(
     """Build the MCP server with the document tools (FR-23).
 
     Tools: ``hybrid_search``, ``get_category_tree``, ``list_documents_in_category``,
-    ``get_document``.
+    ``get_document``, ``search_documents``, ``update_document_metadata``.
     """
     library = prompts or PromptLibrary()
     mcp: FastMCP = FastMCP(
@@ -52,6 +53,7 @@ def build_server(
         top_k: int | None = None,
         doc_type: str | None = None,
         category_path: str | None = None,
+        title: str | None = None,
         filters: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         hits = await search.hybrid_search(
@@ -59,9 +61,67 @@ def build_server(
             top_k=top_k,
             doc_type=doc_type,
             category_path=category_path,
+            title=title,
             filters=filters,
         )
         return [hit.model_dump() for hit in hits]
+
+    async def search_documents(
+        query: str | None = None,
+        page: int = 1,
+        page_size: int = 25,
+        doc_type: str | None = None,
+        category_path: str | None = None,
+        title: str | None = None,
+        status: str | None = None,
+        filters: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        documents, total = await search.search_documents(
+            query=query,
+            page=page,
+            page_size=page_size,
+            doc_type=doc_type,
+            category_path=category_path,
+            title=title,
+            status=status,
+            filters=filters,
+        )
+        return {
+            "items": [
+                {
+                    "document_id": doc.document_id,
+                    "title": doc.title,
+                    "doc_type": doc.doc_type,
+                    "category_paths": doc.category_paths,
+                    "created_at": doc.created_at.isoformat(),
+                }
+                for doc in documents
+            ],
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+        }
+
+    async def update_document_metadata(
+        document_id: str,
+        doc_type: str | None = None,
+        extracted_values: list[dict[str, Any]] | None = None,
+        folder_structure: list[str] | None = None,
+        category_paths: list[str] | None = None,
+    ) -> dict[str, Any]:
+        values = (
+            [ExtractedValue.model_validate(v) for v in extracted_values]
+            if extracted_values is not None
+            else None
+        )
+        document = await search.update_document_metadata(
+            document_id,
+            doc_type=doc_type,
+            extracted_values=values,
+            folder_structure=folder_structure,
+            category_paths=category_paths,
+        )
+        return document.model_dump(mode="json")
 
     async def get_category_tree(
         prefix: str | None = None, max_depth: int | None = None
@@ -122,5 +182,15 @@ def build_server(
     mcp.add_tool(
         get_document, name="get_document", description=_description(library, "get_document")
     )
-    _log.info("mcp_server_built", tools=4)
+    mcp.add_tool(
+        search_documents,
+        name="search_documents",
+        description=_description(library, "search_documents"),
+    )
+    mcp.add_tool(
+        update_document_metadata,
+        name="update_document_metadata",
+        description=_description(library, "update_document_metadata"),
+    )
+    _log.info("mcp_server_built", tools=6)
     return mcp

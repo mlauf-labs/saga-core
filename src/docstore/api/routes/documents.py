@@ -10,7 +10,9 @@ from docstore.api import service
 from docstore.api.dependencies import AuthDep, ServicesDep
 from docstore.api.schemas import (
     DocumentListResponse,
+    DocumentMetadataPatch,
     DocumentResponse,
+    DocumentSearchRequest,
     DocumentStatusResponse,
     UploadAcceptedResponse,
 )
@@ -60,6 +62,36 @@ async def list_documents(
     )
 
 
+@router.post(
+    "/search",
+    response_model=DocumentListResponse,
+    summary="Keyword search over documents (title, content, metadata) with filters",
+)
+async def search_documents(
+    services: ServicesDep, request: DocumentSearchRequest
+) -> DocumentListResponse:
+    pagination = services.config.api.pagination
+    effective_size = min(
+        request.page_size or pagination.default_page_size, pagination.max_page_size
+    )
+    documents, total = await services.search.search_documents(
+        query=request.query,
+        page=request.page,
+        page_size=effective_size,
+        doc_type=request.doc_type,
+        category_path=request.category_path,
+        title=request.title,
+        status=request.status,
+        filters=request.filters or None,
+    )
+    return DocumentListResponse(
+        items=[DocumentResponse.from_document(doc, include_content=False) for doc in documents],
+        page=request.page,
+        page_size=effective_size,
+        total=total,
+    )
+
+
 @router.get(
     "/{document_id}",
     response_model=DocumentResponse,
@@ -88,19 +120,35 @@ async def get_document_status(services: ServicesDep, document_id: str) -> Docume
 
 @router.get(
     "/{document_id}/file",
-    summary="Download the original document binary",
+    summary="Download or inline-preview the original document binary",
     response_class=Response,
 )
-async def download_document_file(services: ServicesDep, document_id: str) -> Response:
+async def download_document_file(
+    services: ServicesDep,
+    document_id: str,
+    disposition: Annotated[str, Query(pattern="^(inline|attachment)$")] = "attachment",
+) -> Response:
     document = await service.get_document(services, document_id)
     data = await services.minio.get_object(document_id)
     return Response(
         content=data,
         media_type=document.mime_type or "application/octet-stream",
         headers={
-            "Content-Disposition": f'attachment; filename="{document.title}"',
+            "Content-Disposition": f'{disposition}; filename="{document.title}"',
         },
     )
+
+
+@router.patch(
+    "/{document_id}/metadata",
+    response_model=DocumentResponse,
+    summary="Update editable document metadata (propagates to search index)",
+)
+async def update_document_metadata(
+    services: ServicesDep, document_id: str, patch: DocumentMetadataPatch
+) -> DocumentResponse:
+    document = await service.update_metadata(services, document_id, patch)
+    return DocumentResponse.from_document(document, include_content=False)
 
 
 @router.put(

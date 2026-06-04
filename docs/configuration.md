@@ -22,6 +22,8 @@ are **never** committed — supply them via environment variables / `.env` (NFR-
 | `host` / `port` | `0.0.0.0` / `8000` | REST API bind address. |
 | `enable_swagger` | `true` | Toggle the Swagger UI / OpenAPI (FR-34). |
 | `max_upload_bytes` | `104857600` | Max upload size (100 MiB) (NFR-20). |
+| `cors_allow_origins` | `["*"]` | Allowed CORS origins for browser UIs. Comma-separated string (env `API_CORS_ALLOW_ORIGINS`) or list; `*` allows all. Restrict in production. |
+| `cors_allow_credentials` | `true` | Allow credentials in CORS requests (env `API_CORS_ALLOW_CREDENTIALS`). |
 | `pagination.default_page_size` | `25` | Default list page size. |
 | `pagination.max_page_size` | `200` | Hard cap for list/export page size. |
 

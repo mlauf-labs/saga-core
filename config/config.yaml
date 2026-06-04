@@ -13,6 +13,9 @@ api:
   enable_swagger: true
   # Maximum upload size in bytes (NFR-20).
   max_upload_bytes: 104857600 # 100 MiB
+  # CORS for browser UIs. Comma-separated origins; '*' allows all (default).
+  cors_allow_origins: ${API_CORS_ALLOW_ORIGINS:-*}
+  cors_allow_credentials: ${API_CORS_ALLOW_CREDENTIALS:-true}
   pagination:
     default_page_size: 25
     max_page_size: 200

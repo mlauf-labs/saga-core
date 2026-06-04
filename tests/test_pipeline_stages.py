@@ -129,6 +129,7 @@ async def test_index_chunks_builds_and_indexes(
 ) -> None:
     indexed = await index_chunks(
         document_id="d1",
+        title="Invoice.pdf",
         markdown="# md",
         doc_type="invoice",
         category_paths=["Finance"],
@@ -143,6 +144,7 @@ async def test_index_chunks_builds_and_indexes(
     assert chunks[0].embedding == [0.1, 0.2]
     assert chunks[1].doc_type == "invoice"
     assert chunks[0].value_terms == ["invoice_number=INV-1"]
+    assert chunks[0].title == "Invoice.pdf"
 
 
 async def test_index_chunks_no_chunks_returns_zero(
@@ -151,6 +153,7 @@ async def test_index_chunks_no_chunks_returns_zero(
     chunker.split.return_value = []
     indexed = await index_chunks(
         document_id="d1",
+        title="empty.txt",
         markdown="",
         doc_type=None,
         category_paths=[],

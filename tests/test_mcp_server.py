@@ -43,10 +43,12 @@ def search() -> MagicMock:
     )
     fake.list_documents_in_category = AsyncMock(return_value=([_document()], 1))
     fake.get_document = AsyncMock(return_value=_document())
+    fake.search_documents = AsyncMock(return_value=([_document()], 1))
+    fake.update_document_metadata = AsyncMock(return_value=_document())
     return fake
 
 
-async def test_build_server_registers_four_tools(search: MagicMock) -> None:
+async def test_build_server_registers_all_tools(search: MagicMock) -> None:
     mcp = build_server(AppConfig(), search)
     tools = await mcp.list_tools()
     names = {tool.name for tool in tools}
@@ -55,9 +57,28 @@ async def test_build_server_registers_four_tools(search: MagicMock) -> None:
         "get_category_tree",
         "list_documents_in_category",
         "get_document",
+        "search_documents",
+        "update_document_metadata",
     }
     # Descriptions are loaded from prompts/mcp/*.md (non-empty).
     assert all(tool.description for tool in tools)
+
+
+async def test_search_documents_tool(search: MagicMock) -> None:
+    mcp = build_server(AppConfig(), search)
+    result: Any = await mcp.call_tool("search_documents", {"query": "invoice"})
+    assert result[1]["total"] == 1
+    assert result[1]["items"][0]["document_id"] == "d1"
+
+
+async def test_update_document_metadata_tool(search: MagicMock) -> None:
+    mcp = build_server(AppConfig(), search)
+    result: Any = await mcp.call_tool(
+        "update_document_metadata",
+        {"document_id": "d1", "doc_type": "contract", "category_paths": ["Legal"]},
+    )
+    assert result[1]["document_id"] == "d1"
+    search.update_document_metadata.assert_awaited_once()
 
 
 async def test_hybrid_search_tool(search: MagicMock) -> None:

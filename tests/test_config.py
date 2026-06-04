@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from docstore.core.config import _resolve_env
+from docstore.core.config import ApiConfig, _resolve_env
 from docstore.core.errors import ConfigError
 
 
@@ -27,3 +27,19 @@ def test_resolve_env_raises_when_required_and_unset(monkeypatch: pytest.MonkeyPa
 def test_resolve_env_mixed_text(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOST", "db")
     assert _resolve_env("redis://${HOST}:6379/0") == "redis://db:6379/0"
+
+
+def test_api_cors_origins_default_allow_all() -> None:
+    assert ApiConfig().cors_allow_origins == ["*"]
+
+
+def test_api_cors_origins_split_from_csv_string() -> None:
+    cfg = ApiConfig.model_validate(
+        {"cors_allow_origins": "https://a.example.com, https://b.example.com ,"}
+    )
+    assert cfg.cors_allow_origins == ["https://a.example.com", "https://b.example.com"]
+
+
+def test_api_cors_origins_accepts_list() -> None:
+    cfg = ApiConfig.model_validate({"cors_allow_origins": ["https://a.example.com"]})
+    assert cfg.cors_allow_origins == ["https://a.example.com"]

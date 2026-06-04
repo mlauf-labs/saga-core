@@ -13,7 +13,7 @@ from docstore.core.errors import DocStoreError
 
 if TYPE_CHECKING:
     from docstore.core.config import AppConfig
-    from docstore.core.models import CategoryNode, Document, SearchHit
+    from docstore.core.models import CategoryNode, Document, ExtractedValue, SearchHit
 
 
 class DocumentStore(Protocol):
@@ -27,6 +27,27 @@ class DocumentStore(Protocol):
     async def scroll_documents(
         self, *, page_size: int, search_after: list[Any] | None = ...
     ) -> tuple[list[Document], list[Any] | None]: ...
+    async def search_documents(
+        self,
+        *,
+        query: str | None,
+        page: int,
+        page_size: int,
+        doc_type: str | None = ...,
+        category_path: str | None = ...,
+        title: str | None = ...,
+        status: str | None = ...,
+        extracted_values: dict[str, str] | None = ...,
+    ) -> tuple[list[Document], int]: ...
+    async def update_document_fields(
+        self,
+        document_id: str,
+        *,
+        doc_type: str | None = ...,
+        extracted_values: list[ExtractedValue] | None = ...,
+        folder_structure: list[str] | None = ...,
+        category_paths: list[str] | None = ...,
+    ) -> Document: ...
 
 
 class BinaryStore(Protocol):
@@ -53,6 +74,7 @@ class SearchEngine(Protocol):
         top_k: int | None = ...,
         doc_type: str | None = ...,
         category_path: str | None = ...,
+        title: str | None = ...,
         filters: dict[str, str] | None = ...,
     ) -> list[SearchHit]: ...
 
@@ -68,6 +90,29 @@ class SearchEngine(Protocol):
         page: int = ...,
         page_size: int = ...,
     ) -> tuple[list[Document], int]: ...
+
+    async def search_documents(
+        self,
+        *,
+        query: str | None = ...,
+        page: int = ...,
+        page_size: int = ...,
+        doc_type: str | None = ...,
+        category_path: str | None = ...,
+        title: str | None = ...,
+        status: str | None = ...,
+        filters: dict[str, str] | None = ...,
+    ) -> tuple[list[Document], int]: ...
+
+    async def update_document_metadata(
+        self,
+        document_id: str,
+        *,
+        doc_type: str | None = ...,
+        extracted_values: list[ExtractedValue] | None = ...,
+        folder_structure: list[str] | None = ...,
+        category_paths: list[str] | None = ...,
+    ) -> Document: ...
 
 
 @dataclass

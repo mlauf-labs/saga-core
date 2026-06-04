@@ -83,6 +83,7 @@ async def analyze_metadata(
 async def index_chunks(
     *,
     document_id: str,
+    title: str,
     markdown: str,
     doc_type: str | None,
     category_paths: list[str],
@@ -107,6 +108,7 @@ async def index_chunks(
             ordinal=ordinal,
             snippet=text,
             embedding=vector,
+            title=title,
             doc_type=doc_type,
             category_paths=category_paths,
             value_terms=value_terms,
