@@ -3,6 +3,11 @@
 The structured-output library drives the LLM via tool calling, so we build a
 LangChain ``BaseChatModel`` (Ollama / OpenAI / Azure) from ``providers.yaml`` rather
 than calling the raw SDKs directly. Selection, models and endpoints are configurable.
+
+Ollama is accessed through its **OpenAI-compatible** ``/v1`` endpoint via
+``ChatOpenAI``: the structured-output library issues OpenAI-style tool calls
+(``strict`` / ``parallel_tool_calls``) that the native ``ChatOllama`` binding does not
+accept, whereas Ollama's OpenAI-compatible API does.
 """
 
 from __future__ import annotations
@@ -33,14 +38,17 @@ def _require(value: str | None, field: str, provider: str) -> str:
 
 
 def _build_ollama(settings: LlmProviderSettings) -> BaseChatModel:
-    from langchain_ollama import ChatOllama
+    from langchain_openai import ChatOpenAI
 
-    return ChatOllama(
+    base_url = (settings.base_url or "http://ollama:11434").rstrip("/")
+    return ChatOpenAI(
         model=_require(settings.model, "model", "ollama"),
-        base_url=settings.base_url,
+        base_url=f"{base_url}/v1",
+        # Ollama ignores the key, but the OpenAI client requires a non-empty value.
+        api_key=SecretStr(settings.api_key or "ollama"),
         temperature=settings.temperature,
-        num_predict=settings.max_output_tokens,
-        client_kwargs={"timeout": settings.request_timeout},
+        max_completion_tokens=settings.max_output_tokens,
+        timeout=settings.request_timeout,
     )
 
 

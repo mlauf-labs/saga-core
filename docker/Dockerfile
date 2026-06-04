@@ -10,6 +10,13 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
+# The project depends on the sibling `llm-structured-output` library via a uv path
+# source (../structured_output). It lives outside this build context, so it is
+# provided as a named additional build context and copied to the matching path.
+# (compose: build.additional_contexts.structured_output=../structured_output)
+COPY --from=structured_output pyproject.toml README.md /structured_output/
+COPY --from=structured_output src /structured_output/src
+
 # Install dependencies first (cached layer) using only the lock metadata.
 COPY pyproject.toml uv.lock* ./
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -33,6 +40,8 @@ RUN apt-get update \
     && useradd --create-home --uid 10001 docstore
 
 WORKDIR /app
+# Bring the editable-installed local library along so its install resolves.
+COPY --from=builder --chown=docstore:docstore /structured_output /structured_output
 COPY --from=builder --chown=docstore:docstore /app /app
 
 ENV PATH="/app/.venv/bin:${PATH}" \

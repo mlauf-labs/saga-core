@@ -31,9 +31,9 @@ dependencies = [
     "openai>=1.50",
     "ollama>=0.4",
     # Structured, validated metadata extraction with automatic retry on type errors.
+    # Ollama is used via its OpenAI-compatible endpoint, so only langchain-openai is needed.
     "llm-structured-output",
     "langchain-openai>=0.2",
-    "langchain-ollama>=0.2",
 ]
 
 [project.optional-dependencies]

@@ -101,7 +101,11 @@ with automatic retry on schema/type errors). Relevant `llm` keys:
 | `fallback_model` | `` (off) | Optional fallback model (same provider) used when the primary exhausts its retries. |
 
 Per-provider `max_output_tokens` and `request_timeout` bound generation length and call
-duration. Models must support **tool calling** (e.g. `llama3.1:8b`, GPT-4o family).
+duration. Models must support **tool calling** (e.g. `llama3.2:3b`, `llama3.1:8b`,
+GPT-4o family). **Ollama** is accessed via its **OpenAI-compatible** `/v1` endpoint
+(the structured-output library issues OpenAI-style tool calls), so the configured
+`base_url` should be the Ollama root (e.g. `http://ollama:11434`); `/v1` is appended
+automatically.
 
 ## `logging.yaml`
 
