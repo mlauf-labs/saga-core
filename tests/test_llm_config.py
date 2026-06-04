@@ -30,3 +30,20 @@ def test_active_returns_selected() -> None:
         },
     )
     assert config.active.model == "gpt"
+
+
+def test_fallback_disabled_by_default() -> None:
+    config = LlmConfig(provider="ollama", providers={"ollama": LlmProviderSettings(model="m")})
+    assert config.fallback is None
+
+
+def test_fallback_copies_active_with_new_model() -> None:
+    config = LlmConfig(
+        provider="openai",
+        providers={"openai": LlmProviderSettings(model="gpt-4o-mini", api_key="k")},
+        fallback_model="gpt-4o",
+    )
+    fallback = config.fallback
+    assert fallback is not None
+    assert fallback.model == "gpt-4o"
+    assert fallback.api_key == "k"  # inherited from the active provider

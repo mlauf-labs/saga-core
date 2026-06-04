@@ -88,8 +88,20 @@ under `routing` (`default`, `by_extension`, `by_mime_type`). Default policy:
 
 `llm` and `embeddings` sections each have a `provider` selector (`ollama` | `openai` |
 `azure`) and a `providers.<name>` block. Default: **Ollama** (local, no API keys). The
-embedding `dimension` **must** equal `opensearch.vector_dimension` (FR-27). `llm.max_input_chars`
-caps how much document text is sent per analysis call.
+embedding `dimension` **must** equal `opensearch.vector_dimension` (FR-27).
+
+Structured metadata extraction uses the `llm-structured-output` library (tool-calling
+with automatic retry on schema/type errors). Relevant `llm` keys:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `max_input_chars` | `12000` | Max document characters sent per analysis call. |
+| `max_primary_retries` | `3` | Validation-retry attempts on the primary model. |
+| `max_fallback_retries` | `3` | Validation-retry attempts on the fallback model. |
+| `fallback_model` | `` (off) | Optional fallback model (same provider) used when the primary exhausts its retries. |
+
+Per-provider `max_output_tokens` and `request_timeout` bound generation length and call
+duration. Models must support **tool calling** (e.g. `llama3.1:8b`, GPT-4o family).
 
 ## `logging.yaml`
 

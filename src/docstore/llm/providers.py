@@ -1,20 +1,22 @@
-"""Concrete LLM provider adapters and a factory (FR-33 / NFR-34).
+"""LangChain chat-model factory for structured extraction (FR-33 / NFR-34).
 
-Supported providers: ``ollama`` (default), ``openai``, ``azure``. Selection and
-model/endpoint settings come from ``providers.yaml``.
+The structured-output library drives the LLM via tool calling, so we build a
+LangChain ``BaseChatModel`` (Ollama / OpenAI / Azure) from ``providers.yaml`` rather
+than calling the raw SDKs directly. Selection, models and endpoints are configurable.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from docstore.core.errors import ConfigError, ProviderError
+from pydantic import SecretStr
+
+from docstore.core.errors import ConfigError
 from docstore.core.logging import get_logger
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from langchain_core.language_models.chat_models import BaseChatModel
 
-    from docstore.llm.base import LlmProvider
     from docstore.llm.config import LlmConfig, LlmProviderSettings
 
 _log = get_logger("docstore.llm")
@@ -30,130 +32,71 @@ def _require(value: str | None, field: str, provider: str) -> str:
     return value
 
 
-class OllamaLlm:
-    """LLM adapter backed by a local/remote Ollama instance."""
+def _build_ollama(settings: LlmProviderSettings) -> BaseChatModel:
+    from langchain_ollama import ChatOllama
 
-    name = "ollama"
-
-    def __init__(self, settings: LlmProviderSettings) -> None:
-        from ollama import AsyncClient
-
-        self._model = _require(settings.model, "model", self.name)
-        self._temperature = settings.temperature
-        self._num_predict = settings.max_output_tokens
-        self._client = AsyncClient(host=settings.base_url, timeout=settings.request_timeout)
-
-    async def complete(self, *, prompt: str, json_mode: bool = True) -> str:
-        try:
-            response = await self._client.chat(
-                model=self._model,
-                messages=[{"role": "user", "content": prompt}],
-                format="json" if json_mode else "",
-                options={"temperature": self._temperature, "num_predict": self._num_predict},
-            )
-        except Exception as exc:
-            raise ProviderError(f"Ollama chat request failed: {exc}") from exc
-        content = response.message.content
-        if not content:
-            raise ProviderError("Ollama returned an empty response.")
-        return str(content)
-
-    async def aclose(self) -> None:
-        return None
+    return ChatOllama(
+        model=_require(settings.model, "model", "ollama"),
+        base_url=settings.base_url,
+        temperature=settings.temperature,
+        num_predict=settings.max_output_tokens,
+        client_kwargs={"timeout": settings.request_timeout},
+    )
 
 
-class _OpenAICompatibleLlm:
-    """Shared implementation for the OpenAI and Azure OpenAI adapters."""
+def _build_openai(settings: LlmProviderSettings) -> BaseChatModel:
+    from langchain_openai import ChatOpenAI
 
-    name = "openai"
-
-    def __init__(
-        self, model: str, temperature: float, max_output_tokens: int, client: object
-    ) -> None:
-        self._model = model
-        self._temperature = temperature
-        self._max_output_tokens = max_output_tokens
-        self._client = client
-
-    async def complete(self, *, prompt: str, json_mode: bool = True) -> str:
-        kwargs: dict[str, object] = {
-            "model": self._model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": self._temperature,
-            "max_tokens": self._max_output_tokens,
-        }
-        if json_mode:
-            kwargs["response_format"] = {"type": "json_object"}
-        try:
-            response = await self._client.chat.completions.create(**kwargs)  # type: ignore[attr-defined]
-        except Exception as exc:
-            raise ProviderError(f"{self.name} chat request failed: {exc}") from exc
-        content = response.choices[0].message.content
-        if not content:
-            raise ProviderError(f"{self.name} returned an empty response.")
-        return str(content)
-
-    async def aclose(self) -> None:
-        await self._client.close()  # type: ignore[attr-defined]
+    return ChatOpenAI(
+        model=_require(settings.model, "model", "openai"),
+        api_key=SecretStr(_require(settings.api_key, "api_key", "openai")),
+        base_url=settings.base_url or _DEFAULT_OPENAI_BASE_URL,
+        temperature=settings.temperature,
+        max_completion_tokens=settings.max_output_tokens,
+        timeout=settings.request_timeout,
+    )
 
 
-class OpenAILlm(_OpenAICompatibleLlm):
-    """LLM adapter for the OpenAI API."""
+def _build_azure(settings: LlmProviderSettings) -> BaseChatModel:
+    from langchain_openai import AzureChatOpenAI
 
-    name = "openai"
-
-    def __init__(self, settings: LlmProviderSettings) -> None:
-        from openai import AsyncOpenAI
-
-        client = AsyncOpenAI(
-            api_key=_require(settings.api_key, "api_key", self.name),
-            base_url=settings.base_url or _DEFAULT_OPENAI_BASE_URL,
-            timeout=settings.request_timeout,
-        )
-        super().__init__(
-            model=_require(settings.model, "model", self.name),
-            temperature=settings.temperature,
-            max_output_tokens=settings.max_output_tokens,
-            client=client,
-        )
+    return AzureChatOpenAI(
+        azure_deployment=_require(settings.deployment, "deployment", "azure"),
+        api_key=SecretStr(_require(settings.api_key, "api_key", "azure")),
+        azure_endpoint=_require(settings.endpoint, "endpoint", "azure"),
+        api_version=_require(settings.api_version, "api_version", "azure"),
+        temperature=settings.temperature,
+        max_completion_tokens=settings.max_output_tokens,
+        timeout=settings.request_timeout,
+    )
 
 
-class AzureLlm(_OpenAICompatibleLlm):
-    """LLM adapter for Azure OpenAI (model = deployment name)."""
-
-    name = "azure"
-
-    def __init__(self, settings: LlmProviderSettings) -> None:
-        from openai import AsyncAzureOpenAI
-
-        client = AsyncAzureOpenAI(
-            api_key=_require(settings.api_key, "api_key", self.name),
-            azure_endpoint=_require(settings.endpoint, "endpoint", self.name),
-            api_version=_require(settings.api_version, "api_version", self.name),
-            timeout=settings.request_timeout,
-        )
-        super().__init__(
-            model=_require(settings.deployment, "deployment", self.name),
-            temperature=settings.temperature,
-            max_output_tokens=settings.max_output_tokens,
-            client=client,
-        )
-
-
-_PROVIDERS: dict[str, Callable[[LlmProviderSettings], LlmProvider]] = {
-    "ollama": OllamaLlm,
-    "openai": OpenAILlm,
-    "azure": AzureLlm,
+_BUILDERS = {
+    "ollama": _build_ollama,
+    "openai": _build_openai,
+    "azure": _build_azure,
 }
 
 
-def build_llm_provider(config: LlmConfig) -> LlmProvider:
-    """Construct the configured LLM provider adapter (FR-33)."""
-    factory = _PROVIDERS.get(config.provider)
-    if factory is None:
-        raise ConfigError(
-            f"Unknown LLM provider '{config.provider}'. Supported: {sorted(_PROVIDERS)}."
-        )
-    provider = factory(config.active)
-    _log.info("llm_provider_ready", provider=config.provider)
-    return provider
+def _build(provider: str, settings: LlmProviderSettings) -> BaseChatModel:
+    builder = _BUILDERS.get(provider)
+    if builder is None:
+        raise ConfigError(f"Unknown LLM provider '{provider}'. Supported: {sorted(_BUILDERS)}.")
+    return builder(settings)
+
+
+def build_chat_model(config: LlmConfig) -> BaseChatModel:
+    """Build the primary LangChain chat model for the configured provider (FR-33)."""
+    model = _build(config.provider, config.active)
+    _log.info("chat_model_ready", provider=config.provider, model=config.active.model)
+    return model
+
+
+def build_fallback_chat_model(config: LlmConfig) -> BaseChatModel | None:
+    """Build the optional fallback chat model, or ``None`` when not configured."""
+    fallback = config.fallback
+    if fallback is None:
+        return None
+    model = _build(config.provider, fallback)
+    _log.info("fallback_chat_model_ready", provider=config.provider, model=fallback.model)
+    return model

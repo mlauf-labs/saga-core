@@ -164,10 +164,18 @@ MCP (`get_category_tree`, `list_documents_in_category`).
 
 ## 6. LLM & embeddings abstraction
 
-A provider interface exposes `chat()`/`complete()` and `embed()`; concrete adapters
-implement **Ollama**, **OpenAI**, **Azure OpenAI**. Selection + model names +
-endpoints are configured in YAML/env. Structured extraction uses JSON-schema /
-function-style outputs validated into Pydantic models (FR-18).
+**Structured metadata extraction** (classification, value extraction, categorisation)
+is performed with the **`llm-structured-output`** library: it drives a LangChain chat
+model via **tool-calling** to populate a Pydantic schema and **retries on schema/type
+errors** by feeding the validation errors back to the model, with an optional
+**fallback model** (FR-18). `docstore.llm.providers` builds the chat model
+(**Ollama** / **OpenAI** / **Azure OpenAI**) from YAML/env; the analyzer
+(`docstore.llm.analyzer`) calls `extract_from_text(model, Schema, text, system_prompt=…)`.
+Each step is resilient — a step that still fails after all retries falls back to a
+sensible default so the document remains searchable.
+
+**Embeddings** use a separate provider abstraction (`docstore.embeddings`) with
+Ollama/OpenAI/Azure adapters over the raw SDKs (no structured extraction involved).
 
 Prompts (classification, value extraction, categorisation) and MCP tool descriptions
 are **external Markdown files** under `prompts/`, loaded + rendered at runtime

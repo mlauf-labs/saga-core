@@ -30,6 +30,10 @@ dependencies = [
     "mcp>=1.2",
     "openai>=1.50",
     "ollama>=0.4",
+    # Structured, validated metadata extraction with automatic retry on type errors.
+    "llm-structured-output",
+    "langchain-openai>=0.2",
+    "langchain-ollama>=0.2",
 ]
 
 [project.optional-dependencies]
@@ -60,6 +64,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/docstore"]
+
+# Local source for the structured-output library (sibling checkout).
+# For a public release this should be replaced with a published version.
+[tool.uv.sources]
+llm-structured-output = { path = "../structured_output", editable = true }
 
 # ---------------------------------------------------------------------------
 # Tooling

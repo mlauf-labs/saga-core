@@ -17,7 +17,8 @@ from docstore.embeddings import build_embedding_provider, load_embeddings_config
 from docstore.llm import (
     DocumentAnalyzer,
     PromptLibrary,
-    build_llm_provider,
+    build_chat_model,
+    build_fallback_chat_model,
     load_llm_config,
 )
 from docstore.pipeline.queue import redis_settings
@@ -40,9 +41,12 @@ async def on_startup(ctx: dict[str, Any]) -> None:
     converters = ConverterRegistry(load_converters_config())
     llm_config = load_llm_config()
     analyzer = DocumentAnalyzer(
-        build_llm_provider(llm_config),
+        build_chat_model(llm_config),
         PromptLibrary(),
+        fallback_model=build_fallback_chat_model(llm_config),
         max_input_chars=llm_config.max_input_chars,
+        max_primary_retries=llm_config.max_primary_retries,
+        max_fallback_retries=llm_config.max_fallback_retries,
     )
     chunker = MarkdownChunker(config.chunking)
     embedder = build_embedding_provider(load_embeddings_config())
@@ -72,9 +76,6 @@ async def on_shutdown(ctx: dict[str, Any]) -> None:
     converters: ConverterRegistry | None = ctx.get("converters")
     if converters is not None:
         await converters.aclose()
-    analyzer: DocumentAnalyzer | None = ctx.get("analyzer")
-    if analyzer is not None:
-        await analyzer.aclose()
     embedder: EmbeddingProvider | None = ctx.get("embedder")
     if embedder is not None:
         await embedder.aclose()

@@ -41,6 +41,12 @@ class LlmConfig(BaseModel):
     providers: dict[str, LlmProviderSettings] = Field(default_factory=dict)
     # Maximum characters of document text sent to the LLM per analysis call.
     max_input_chars: int = 12000
+    # Optional fallback model (same provider/endpoint) used by the structured-output
+    # library when the primary model exhausts its validation retries.
+    fallback_model: str | None = None
+    # Validation-retry budgets for structured extraction (retry on schema/type errors).
+    max_primary_retries: int = 3
+    max_fallback_retries: int = 3
 
     @property
     def active(self) -> LlmProviderSettings:
@@ -51,6 +57,13 @@ class LlmConfig(BaseModel):
                 f"llm.providers in providers.yaml."
             )
         return settings
+
+    @property
+    def fallback(self) -> LlmProviderSettings | None:
+        """Settings for the fallback model, or ``None`` when not configured."""
+        if not self.fallback_model:
+            return None
+        return self.active.model_copy(update={"model": self.fallback_model})
 
 
 def load_llm_config(config_dir: Path | str = "config") -> LlmConfig:
