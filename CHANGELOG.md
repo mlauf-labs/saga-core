@@ -6,6 +6,15 @@ generated from the commit history (see `cliff.toml` and the release workflow).
 
 ## [Unreleased]
 
+### Features
+- **llm**: extract document metadata (classification, identifier/value extraction,
+  hierarchical categorisation) with the `llm-structured-output` library — LangChain
+  tool-calling into Pydantic schemas with automatic **retry on schema/type errors**
+  and an optional **fallback model** (FR-18). The bespoke JSON-parsing LLM adapters
+  are replaced by a LangChain chat-model factory (Ollama/OpenAI/Azure); embeddings
+  are unchanged. New config: `llm.fallback_model`, `llm.max_primary_retries`,
+  `llm.max_fallback_retries`.
+
 ### Bug Fixes
 - **build**: copy `README.md`/`LICENSE` before `uv sync` so the image builds.
 - **converters**: resolve a usable MIME type from the filename when uploads arrive

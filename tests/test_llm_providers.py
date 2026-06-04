@@ -1,93 +1,71 @@
-"""Unit tests for LLM provider adapters and the factory (mocked SDK clients)."""
+"""Unit tests for the LangChain chat-model factory (offline construction)."""
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import AsyncMock
-
 import pytest
 
-from docstore.core.errors import ConfigError, ProviderError
+from docstore.core.errors import ConfigError
 from docstore.llm.config import LlmConfig, LlmProviderSettings
-from docstore.llm.providers import OllamaLlm, OpenAILlm, build_llm_provider
+from docstore.llm.providers import build_chat_model, build_fallback_chat_model
 
 
-def _ollama(monkeypatch: pytest.MonkeyPatch, response: object) -> OllamaLlm:
-    fake_client = SimpleNamespace(chat=AsyncMock(return_value=response))
-
-    class _FakeModule:
-        AsyncClient = lambda *a, **k: fake_client  # noqa: E731
-
-    monkeypatch.setitem(__import__("sys").modules, "ollama", _FakeModule)
-    return OllamaLlm(LlmProviderSettings(model="llama3.1", base_url="http://x:11434"))
-
-
-async def test_ollama_complete_returns_content(monkeypatch: pytest.MonkeyPatch) -> None:
-    response = SimpleNamespace(message=SimpleNamespace(content='{"ok": true}'))
-    provider = _ollama(monkeypatch, response)
-    assert await provider.complete(prompt="hi") == '{"ok": true}'
-    await provider.aclose()
-
-
-async def test_ollama_empty_response_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    response = SimpleNamespace(message=SimpleNamespace(content=""))
-    provider = _ollama(monkeypatch, response)
-    with pytest.raises(ProviderError):
-        await provider.complete(prompt="hi")
-
-
-async def test_ollama_request_error_wrapped(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_client = SimpleNamespace(chat=AsyncMock(side_effect=RuntimeError("down")))
-
-    class _FakeModule:
-        AsyncClient = lambda *a, **k: fake_client  # noqa: E731
-
-    monkeypatch.setitem(__import__("sys").modules, "ollama", _FakeModule)
-    provider = OllamaLlm(LlmProviderSettings(model="llama3.1"))
-    with pytest.raises(ProviderError, match="Ollama chat request failed"):
-        await provider.complete(prompt="hi")
-
-
-def test_ollama_requires_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    class _FakeModule:
-        AsyncClient = lambda *a, **k: SimpleNamespace()  # noqa: E731
-
-    monkeypatch.setitem(__import__("sys").modules, "ollama", _FakeModule)
-    with pytest.raises(ConfigError):
-        OllamaLlm(LlmProviderSettings())
-
-
-async def test_openai_complete(monkeypatch: pytest.MonkeyPatch) -> None:
-    completion = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content='{"x": 1}'))]
+def _config(
+    provider: str, settings: LlmProviderSettings, fallback_model: str | None = None
+) -> LlmConfig:
+    return LlmConfig(
+        provider=provider, providers={provider: settings}, fallback_model=fallback_model
     )
-    fake_client = SimpleNamespace(
-        chat=SimpleNamespace(
-            completions=SimpleNamespace(create=AsyncMock(return_value=completion))
+
+
+def test_build_ollama_chat_model() -> None:
+    cfg = _config("ollama", LlmProviderSettings(model="llama3.1:8b", base_url="http://x:11434"))
+    model = build_chat_model(cfg)
+    assert type(model).__name__ == "ChatOllama"
+
+
+def test_build_openai_chat_model() -> None:
+    cfg = _config("openai", LlmProviderSettings(model="gpt-4o-mini", api_key="sk-test"))
+    model = build_chat_model(cfg)
+    assert type(model).__name__ == "ChatOpenAI"
+
+
+def test_build_azure_chat_model() -> None:
+    cfg = _config(
+        "azure",
+        LlmProviderSettings(
+            deployment="dep",
+            api_key="k",
+            endpoint="https://example.openai.azure.com",
+            api_version="2024-10-21",
         ),
-        close=AsyncMock(),
     )
-
-    class _FakeModule:
-        AsyncOpenAI = lambda *a, **k: fake_client  # noqa: E731
-
-    monkeypatch.setitem(__import__("sys").modules, "openai", _FakeModule)
-    provider = OpenAILlm(LlmProviderSettings(model="gpt-4o-mini", api_key="k"))
-    assert await provider.complete(prompt="hi") == '{"x": 1}'
-    await provider.aclose()
-    fake_client.close.assert_awaited_once()
+    model = build_chat_model(cfg)
+    assert type(model).__name__ == "AzureChatOpenAI"
 
 
-def test_openai_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    class _FakeModule:
-        AsyncOpenAI = lambda *a, **k: SimpleNamespace()  # noqa: E731
-
-    monkeypatch.setitem(__import__("sys").modules, "openai", _FakeModule)
+def test_openai_requires_api_key() -> None:
+    cfg = _config("openai", LlmProviderSettings(model="gpt-4o-mini"))
     with pytest.raises(ConfigError):
-        OpenAILlm(LlmProviderSettings(model="gpt"))
+        build_chat_model(cfg)
 
 
-def test_build_llm_provider_unknown() -> None:
-    config = LlmConfig(provider="nope", providers={"nope": LlmProviderSettings()})
+def test_unknown_provider_raises() -> None:
+    cfg = LlmConfig(provider="nope", providers={"nope": LlmProviderSettings()})
     with pytest.raises(ConfigError):
-        build_llm_provider(config)
+        build_chat_model(cfg)
+
+
+def test_fallback_disabled_by_default() -> None:
+    cfg = _config("ollama", LlmProviderSettings(model="llama3.1:8b"))
+    assert build_fallback_chat_model(cfg) is None
+
+
+def test_fallback_built_when_configured() -> None:
+    cfg = _config(
+        "ollama",
+        LlmProviderSettings(model="llama3.2:1b", base_url="http://x:11434"),
+        fallback_model="llama3.1:8b",
+    )
+    fallback = build_fallback_chat_model(cfg)
+    assert fallback is not None
+    assert type(fallback).__name__ == "ChatOllama"

@@ -1,19 +1,20 @@
 """Document analysis orchestration (FR-5, FR-14/15/16).
 
-Renders the externalised prompts (``prompts/analysis/*.md``, NFR-30), calls the
-configured LLM provider, and parses + validates the responses into typed models
-(FR-18). Malformed responses raise an actionable :class:`AnalysisError`; low-confidence
-results are flagged via the per-field ``confidence`` but still stored.
+Uses the ``llm-structured-output`` library to extract validated Pydantic models from
+the document text via tool-calling, with automatic retries on schema/type errors and
+an optional fallback model (FR-18). Instructions are loaded from the externalised
+prompts under ``prompts/analysis/*.md`` (NFR-30) and used as system prompts; the
+document text is passed as the extraction input. Each step is resilient: a step that
+ultimately fails to produce a valid model is logged and falls back to a sensible
+default rather than failing the whole document.
 """
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, ValidationError
+from llm_structured_output import extract_from_text
 
-from docstore.core.errors import AnalysisError
 from docstore.core.logging import get_logger
 from docstore.llm.schemas import (
     AnalysisResult,
@@ -23,108 +24,103 @@ from docstore.llm.schemas import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable
+    from pydantic import BaseModel
 
-    from docstore.llm.base import LlmProvider
+    from docstore.llm.base import ChatModel
     from docstore.llm.prompts import PromptLibrary
 
 _log = get_logger("docstore.llm.analyzer")
-
-
-def _extract_json(text: str) -> str:
-    """Return the JSON object substring from a (possibly fenced) LLM response."""
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        # Strip a leading ```json / ``` fence and the trailing ```.
-        cleaned = cleaned.split("\n", 1)[-1] if "\n" in cleaned else cleaned
-        cleaned = cleaned.rsplit("```", 1)[0]
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start == -1 or end == -1 or end < start:
-        raise AnalysisError(f"LLM response did not contain a JSON object: {text[:200]!r}")
-    return cleaned[start : end + 1]
-
-
-def _parse[ModelT: BaseModel](text: str, model: type[ModelT]) -> ModelT:
-    try:
-        payload = json.loads(_extract_json(text))
-    except json.JSONDecodeError as exc:
-        raise AnalysisError(
-            f"Failed to parse LLM response as JSON for {model.__name__}: {exc}"
-        ) from exc
-    try:
-        return model.model_validate(payload)
-    except ValidationError as exc:
-        raise AnalysisError(
-            f"LLM response did not match the expected {model.__name__} schema: {exc}"
-        ) from exc
 
 
 class DocumentAnalyzer:
     """Classifies, extracts values from, and categorises a document via an LLM."""
 
     def __init__(
-        self, provider: LlmProvider, prompts: PromptLibrary, *, max_input_chars: int = 12000
+        self,
+        chat_model: ChatModel,
+        prompts: PromptLibrary,
+        *,
+        fallback_model: ChatModel | None = None,
+        max_input_chars: int = 12000,
+        max_primary_retries: int = 3,
+        max_fallback_retries: int = 3,
     ) -> None:
-        self._provider = provider
+        self._model = chat_model
+        self._fallback = fallback_model
         self._prompts = prompts
         self._max_input_chars = max_input_chars
+        self._max_primary_retries = max_primary_retries
+        self._max_fallback_retries = max_fallback_retries
 
     def _truncate(self, content: str) -> str:
         return content[: self._max_input_chars]
 
-    async def aclose(self) -> None:
-        """Release the underlying provider's network resources."""
-        await self._provider.aclose()
-
-    async def classify(self, *, title: str, content: str) -> Classification:
-        prompt = self._prompts.render(
-            "analysis/classification.md", title=title, content=self._truncate(content)
+    async def _extract[ModelT: BaseModel](
+        self, *, step: str, schema: type[ModelT], system_prompt: str, text: str
+    ) -> ModelT | None:
+        """Run one structured-extraction step; return ``None`` on failure (FR-18)."""
+        result, stats = await extract_from_text(
+            self._model,
+            schema,
+            text,
+            system_prompt=system_prompt,
+            fallback_llm_model=self._fallback,
+            max_primary_retries=self._max_primary_retries,
+            max_fallback_retries=self._max_fallback_retries,
         )
-        return _parse(await self._provider.complete(prompt=prompt), Classification)
+        if result is None:
+            _log.warning("analysis_step_failed", step=step, retries=stats.total_retries)
+        elif stats.total_retries:
+            _log.info("analysis_step_retried", step=step, retries=stats.total_retries)
+        return result
 
-    async def extract_values(self, *, content: str) -> ValueExtraction:
-        prompt = self._prompts.render(
-            "analysis/value-extraction.md", content=self._truncate(content)
+    async def classify(self, *, title: str, content: str) -> Classification | None:
+        system = self._prompts.render("analysis/classification.md", title=title)
+        return await self._extract(
+            step="classification",
+            schema=Classification,
+            system_prompt=system,
+            text=self._truncate(content),
         )
-        return _parse(await self._provider.complete(prompt=prompt), ValueExtraction)
+
+    async def extract_values(self, *, content: str) -> ValueExtraction | None:
+        system = self._prompts.render("analysis/value-extraction.md")
+        return await self._extract(
+            step="value_extraction",
+            schema=ValueExtraction,
+            system_prompt=system,
+            text=self._truncate(content),
+        )
 
     async def categorize(
         self, *, content: str, doc_type: str, extracted_values: str
-    ) -> Categorization:
-        prompt = self._prompts.render(
+    ) -> Categorization | None:
+        system = self._prompts.render(
             "analysis/categorization.md",
-            content=self._truncate(content),
             doc_type=doc_type,
             extracted_values=extracted_values,
         )
-        return _parse(await self._provider.complete(prompt=prompt), Categorization)
+        return await self._extract(
+            step="categorization",
+            schema=Categorization,
+            system_prompt=system,
+            text=self._truncate(content),
+        )
 
     async def analyze(self, *, title: str, content: str) -> AnalysisResult:
-        """Run all analysis steps and return the combined, validated result.
-
-        Each step is resilient (FR-18): a malformed LLM response for one step is
-        logged and falls back to a sensible default rather than failing the whole
-        document, so it still becomes searchable. Provider/transport errors
-        propagate so the job can be retried.
-        """
-        classification = await self._safe(
-            "classification", self.classify(title=title, content=content)
-        )
+        """Run all analysis steps and return the combined, validated result."""
+        classification = await self.classify(title=title, content=content)
         doc_type = classification.doc_type if classification else "unknown"
 
-        extraction = await self._safe("value_extraction", self.extract_values(content=content))
+        extraction = await self.extract_values(content=content)
         values = [item.to_model() for item in extraction.values] if extraction else []
         values = [v for v in values if v.key]
         values_summary = ", ".join(f"{v.key}={v.value}" for v in values) or "none"
 
-        categorization = await self._safe(
-            "categorization",
-            self.categorize(content=content, doc_type=doc_type, extracted_values=values_summary),
+        categorization = await self.categorize(
+            content=content, doc_type=doc_type, extracted_values=values_summary
         )
-        paths = (
-            [p.strip() for p in categorization.paths if p.strip()] if categorization else []
-        )
+        paths = [p.strip() for p in categorization.paths if p.strip()] if categorization else []
 
         _log.info(
             "analysis_done",
@@ -139,11 +135,3 @@ class DocumentAnalyzer:
             folder_structure=paths,
             category_paths=paths,
         )
-
-    async def _safe[ResultT](self, step: str, coro: Awaitable[ResultT]) -> ResultT | None:
-        """Await an analysis step, returning ``None`` on a parsing/analysis failure."""
-        try:
-            return await coro
-        except AnalysisError as exc:
-            _log.warning("analysis_step_failed", step=step, error=str(exc))
-            return None

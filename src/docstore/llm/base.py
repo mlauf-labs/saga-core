@@ -1,24 +1,18 @@
-"""LLM provider interface (Ollama / OpenAI / Azure), NFR-34."""
+"""Shared LLM types.
+
+Structured extraction is driven by the ``llm-structured-output`` library against a
+LangChain :class:`~langchain_core.language_models.chat_models.BaseChatModel`, so the
+chat model is the unit of abstraction (built by :mod:`docstore.llm.providers`).
+"""
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from langchain_core.language_models.chat_models import BaseChatModel
 
-class LlmProvider(Protocol):
-    """Minimal chat/completion interface used for document analysis."""
+#: A LangChain chat model usable for tool-calling structured extraction.
+type ChatModel = BaseChatModel
 
-    name: str
-
-    async def complete(self, *, prompt: str, json_mode: bool = True) -> str:
-        """Return the model's text response for ``prompt``.
-
-        When ``json_mode`` is true the provider instructs the model to return a
-        single JSON object. Raises :class:`docstore.core.errors.ProviderError` on
-        failure.
-        """
-        ...
-
-    async def aclose(self) -> None:
-        """Release any underlying network resources."""
-        ...
+__all__ = ["ChatModel"]

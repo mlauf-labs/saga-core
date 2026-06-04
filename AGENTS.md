@@ -22,6 +22,12 @@ on an ARQ worker. See [`docs/requirements/`](docs/requirements/).
    Read from `config/*.yaml` (+ env). Secrets only via env/`.env`.
 5. **Prompts live in `prompts/*.md`.** Never inline prompt text or MCP tool
    descriptions as Python string literals — load and render the Markdown files.
+6. **Structured extraction uses `llm-structured-output`.** Whenever you extract
+   structured data from text/documents with an LLM (e.g. metadata), use
+   `extract_from_text`/`get_structured_data` against a LangChain chat model
+   (`docstore.llm.providers.build_chat_model`) with a Pydantic schema. Do **not**
+   hand-roll JSON parsing of LLM output — the library enforces the schema via
+   tool-calling and retries on type/schema errors. Embeddings are separate.
 6. **Actionable errors.** Raise from the `docstore.core.errors` hierarchy with
    messages saying what failed and how to fix it. No bare/silent failures.
 7. **Structured logging.** Use `docstore.core.logging.get_logger("docstore.<area>")`;

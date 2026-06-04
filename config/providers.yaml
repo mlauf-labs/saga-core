@@ -4,6 +4,13 @@
 
 llm:
   provider: ${LLM_PROVIDER:-ollama}
+  # Optional fallback model (same provider/endpoint) tried by the structured-output
+  # library when the primary model exhausts its validation retries. Empty = disabled.
+  fallback_model: ${LLM_FALLBACK_MODEL:-}
+  # Validation-retry budgets: the library re-prompts the model with the schema/type
+  # errors so it can self-correct (retry on type errors).
+  max_primary_retries: 3
+  max_fallback_retries: 3
   providers:
     ollama:
       base_url: ${OLLAMA_URL:-http://ollama:11434}
