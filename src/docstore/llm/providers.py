@@ -49,6 +49,9 @@ def _build_ollama(settings: LlmProviderSettings) -> BaseChatModel:
         temperature=settings.temperature,
         max_completion_tokens=settings.max_output_tokens,
         timeout=settings.request_timeout,
+        # The structured-output library already retries network errors; disable the
+        # client's own retries so timeouts don't multiply across layers.
+        max_retries=0,
     )
 
 
@@ -62,6 +65,7 @@ def _build_openai(settings: LlmProviderSettings) -> BaseChatModel:
         temperature=settings.temperature,
         max_completion_tokens=settings.max_output_tokens,
         timeout=settings.request_timeout,
+        max_retries=0,
     )
 
 
@@ -76,6 +80,7 @@ def _build_azure(settings: LlmProviderSettings) -> BaseChatModel:
         temperature=settings.temperature,
         max_completion_tokens=settings.max_output_tokens,
         timeout=settings.request_timeout,
+        max_retries=0,
     )
 
 

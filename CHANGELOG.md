@@ -27,6 +27,14 @@ generated from the commit history (see `cliff.toml` and the release workflow).
   are unchanged. New config: `llm.fallback_model`, `llm.max_primary_retries`,
   `llm.max_fallback_retries`.
 
+### Observability
+- **llm**: each analysis step logs `analysis_step_start`/`done`/`failed` with
+  `llm_calls`, `validation_retries`, `fallback_used` and `elapsed_ms`, and emits
+  `llm_correction_sent` with the exact correction text sent back to the model on a
+  retry — making slow/looping metadata extraction diagnosable (NFR-16).
+- **llm**: disable the OpenAI client's built-in retries (`max_retries=0`) so request
+  timeouts no longer multiply across the client and the structured-output retry layer.
+
 ### Bug Fixes
 - **build**: copy `README.md`/`LICENSE` before `uv sync` so the image builds.
 - **converters**: resolve a usable MIME type from the filename when uploads arrive
