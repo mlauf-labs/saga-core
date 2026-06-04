@@ -18,9 +18,11 @@ def _config(
 
 
 def test_build_ollama_chat_model() -> None:
+    # Ollama is routed through ChatOpenAI against its OpenAI-compatible /v1 endpoint.
     cfg = _config("ollama", LlmProviderSettings(model="llama3.1:8b", base_url="http://x:11434"))
     model = build_chat_model(cfg)
-    assert type(model).__name__ == "ChatOllama"
+    assert type(model).__name__ == "ChatOpenAI"
+    assert str(getattr(model, "openai_api_base", "")).rstrip("/").endswith("/v1")
 
 
 def test_build_openai_chat_model() -> None:
@@ -68,4 +70,4 @@ def test_fallback_built_when_configured() -> None:
     )
     fallback = build_fallback_chat_model(cfg)
     assert fallback is not None
-    assert type(fallback).__name__ == "ChatOllama"
+    assert type(fallback).__name__ == "ChatOpenAI"
