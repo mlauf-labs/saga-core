@@ -11,6 +11,12 @@ Authorization: Bearer <token>
 Tokens are configured via `DOCSTORE_API_TOKENS` (comma-separated). Invalid/missing
 tokens return `401` with an `auth_error` body.
 
+## CORS
+
+For browser UIs, CORS is configurable via env: `API_CORS_ALLOW_ORIGINS` (comma-separated
+origins, `*` allows all — the default) and `API_CORS_ALLOW_CREDENTIALS` (`true`/`false`).
+Restrict origins in production. See [configuration](../configuration.md).
+
 ## Error format
 
 Every error returns a JSON envelope (NFR-15):
@@ -56,6 +62,27 @@ Query: `page` (≥1, default 1), `page_size` (default `pagination.default_page_s
 capped at `pagination.max_page_size`). Returns `{ items, page, page_size, total }`.
 List items omit `content_markdown`.
 
+### `POST /documents/search`
+Keyword document search over **title, content, type, category and extracted values**,
+with filters (FR-20). Use this to find/browse whole documents (e.g. by title or
+category); use `POST /search` for passage-level semantic search. JSON body:
+
+```json
+{
+  "query": "liability premium",
+  "page": 1,
+  "page_size": 25,
+  "doc_type": "invoice",
+  "category_path": "Finance",
+  "title": "Invoice 2026.pdf",
+  "status": "ready",
+  "filters": { "invoice_number": "INV-1" }
+}
+```
+
+All fields are optional; an empty `query` browses with filters only. Returns a
+paginated `DocumentListResponse`.
+
 ### `GET /documents/{document_id}`
 Full document record. Query `include_content` (bool, default `true`) controls whether
 `content_markdown` is included. `404` if unknown.
@@ -63,6 +90,17 @@ Full document record. Query `include_content` (bool, default `true`) controls wh
 ### `GET /documents/{document_id}/status`
 Lightweight status view (FR-12): `{ document_id, status, error }`. `status` is one of
 `pending | converting | analyzing | indexing | ready | failed`.
+
+### `PATCH /documents/{document_id}/metadata`
+Update editable metadata (FR-20). JSON body with any of `doc_type`,
+`extracted_values`, `folder_structure`, `category_paths`; provided fields replace,
+omitted fields are unchanged. Changes to `doc_type`/`category_paths`/`extracted_values`
+propagate to the chunk/search index so filters stay consistent. Returns the updated
+`DocumentResponse`. `400` if no fields are provided; `404` if unknown.
+
+```json
+{ "doc_type": "contract", "category_paths": ["Legal/Contracts"] }
+```
 
 ### `PUT /documents/{document_id}`
 Replace a document = **delete + re-create** (FR-11). `multipart/form-data` with `file`.
@@ -86,8 +124,9 @@ Hybrid (keyword + semantic) search (FR-19/20/21). JSON body:
 }
 ```
 
-`top_k` is bounded by `mcp.max_top_k`. Returns `{ query, hits }` where each hit has
-`document_id`, `chunk_id`, `snippet`, `score`, `title`, `doc_type`, `category_paths`.
+`top_k` is bounded by `mcp.max_top_k`. The query also matches document titles, and an
+optional `title` field filters to an exact title. Returns `{ query, hits }` where each
+hit has `document_id`, `chunk_id`, `snippet`, `score`, `title`, `doc_type`, `category_paths`.
 
 ### `GET /categories/tree`
 Return the derived hierarchical category tree (FR-22). Query: `prefix` (restrict to a
@@ -100,8 +139,10 @@ List documents in a category branch (FR-22). The path is the category path, e.g.
 `page`, `page_size`. Returns a paginated `DocumentListResponse`.
 
 ### `GET /documents/{document_id}/file`
-Download the original document binary (used by backups). Streams the bytes with the
-stored `mime_type` and a `Content-Disposition` attachment header. `404` if unknown.
+Download or inline-preview the original document binary. Streams the bytes with the
+stored `mime_type`. Query `disposition` = `attachment` (default) or `inline` (for
+in-browser PDF/image preview) sets the `Content-Disposition` header. `404` if unknown;
+`422` for an invalid `disposition` value.
 
 ### `GET /export/documents`
 Stream **all** documents for backup with cursor pagination (FR-28). Query: `cursor`

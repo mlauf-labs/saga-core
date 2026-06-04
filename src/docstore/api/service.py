@@ -19,6 +19,7 @@ from docstore.pipeline.queue import INGEST_JOB
 
 if TYPE_CHECKING:
     from docstore.api.dependencies import Services
+    from docstore.api.schemas import DocumentMetadataPatch
 
 _log = get_logger("docstore.api.service")
 
@@ -104,6 +105,26 @@ async def get_document(services: Services, document_id: str) -> Document:
     document = await services.opensearch.get_document(document_id)
     if document is None:
         raise NotFoundError(f"Document '{document_id}' was not found.")
+    return document
+
+
+async def update_metadata(
+    services: Services, document_id: str, patch: DocumentMetadataPatch
+) -> Document:
+    """Apply a metadata patch and propagate to chunks (FR-20).
+
+    Only fields set on ``patch`` are changed.
+    """
+    if patch.is_empty():
+        raise ValidationError("No metadata fields provided to update.")
+    document = await services.opensearch.update_document_fields(
+        document_id,
+        doc_type=patch.doc_type,
+        extracted_values=patch.extracted_values,
+        folder_structure=patch.folder_structure,
+        category_paths=patch.category_paths,
+    )
+    _log.info("document_metadata_updated", document_id=document_id)
     return document
 
 

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from docstore.core.errors import ConfigError
 
@@ -74,6 +74,17 @@ class ApiConfig(BaseModel):
     enable_swagger: bool = True
     max_upload_bytes: int = 100 * 1024 * 1024
     pagination: PaginationConfig = Field(default_factory=PaginationConfig)
+    # CORS for browser UIs. Default allows all origins; restrict in production.
+    cors_allow_origins: list[str] = Field(default_factory=lambda: ["*"])
+    cors_allow_credentials: bool = True
+
+    @field_validator("cors_allow_origins", mode="before")
+    @classmethod
+    def _split_origins(cls, value: object) -> object:
+        """Accept a comma-separated string (from env) or a list of origins."""
+        if isinstance(value, str):
+            return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
 
 
 class McpConfig(BaseModel):

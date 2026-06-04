@@ -76,9 +76,41 @@ class SearchRequest(BaseModel):
     category_path: str | None = Field(
         default=None, description="Restrict to a category subtree, e.g. 'Insurance/Health'."
     )
+    title: str | None = Field(default=None, description="Restrict to an exact document title.")
     filters: dict[str, str] = Field(
         default_factory=dict, description="Match extracted values, e.g. {invoice_number: '12'}."
     )
+
+
+class DocumentSearchRequest(BaseModel):
+    """Keyword document search over title/content/metadata with filters (FR-20)."""
+
+    query: str | None = Field(
+        default=None, description="Keyword query over title/content/metadata; empty = browse."
+    )
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=0, ge=0, description="0 = configured default page size.")
+    doc_type: str | None = Field(default=None, description="Filter by document type.")
+    category_path: str | None = Field(
+        default=None, description="Filter by a category subtree, e.g. 'Insurance/Health'."
+    )
+    title: str | None = Field(default=None, description="Filter by exact document title.")
+    status: str | None = Field(default=None, description="Filter by processing status.")
+    filters: dict[str, str] = Field(
+        default_factory=dict, description="Match extracted values, e.g. {invoice_number: '12'}."
+    )
+
+
+class DocumentMetadataPatch(BaseModel):
+    """Editable document metadata (PATCH: provided fields replace, omitted unchanged)."""
+
+    doc_type: str | None = None
+    extracted_values: list[ExtractedValue] | None = None
+    folder_structure: list[str] | None = None
+    category_paths: list[str] | None = None
+
+    def is_empty(self) -> bool:
+        return self.model_dump(exclude_unset=True) == {}
 
 
 class SearchResponse(BaseModel):

@@ -19,14 +19,27 @@ startup, so they can be tuned without code changes (NFR-30).
 ### `hybrid_search`
 Hybrid keyword + semantic retrieval over all documents (FR-19).
 
-- `query` (string, required)
+- `query` (string, required; also matches document titles)
 - `top_k` (int, optional; bounded by `mcp.max_top_k`)
 - `doc_type` (string, optional)
 - `category_path` (string, optional; restricts to a subtree)
+- `title` (string, optional; exact-title filter)
 - `filters` (object, optional; matches extracted values, e.g. `{ "invoice_number": "12" }`)
 
 Returns a ranked list of snippets, each with `document_id`, `chunk_id`, `snippet`,
 `score`, `title`, `doc_type`, `category_paths`.
+
+### `search_documents`
+Keyword search over **documents** (title, content, type, category, extracted values)
+with filters (FR-20). Use to find/browse whole documents; use `hybrid_search` for
+passage-level semantic search.
+
+- `query` (string, optional; omit to browse with filters only)
+- `page`, `page_size` (int, optional)
+- `doc_type`, `category_path`, `title`, `status` (string, optional filters)
+- `filters` (object, optional; matches extracted values)
+
+Returns `{ items, page, page_size, total }`.
 
 ### `get_category_tree`
 Return the hierarchical category tree with document counts (FR-22).
@@ -46,6 +59,19 @@ Fetch a single document by id, including its Markdown and metadata (FR-23).
 
 - `document_id` (string, required)
 - `include_content` (bool, default `true`)
+
+### `update_document_metadata`
+Update a document's editable metadata; lets an agent correct classification, values
+or category placement (FR-20). Only provided fields change; changes to
+`doc_type`/`category_paths`/`extracted_values` propagate to the search index.
+
+- `document_id` (string, required)
+- `doc_type` (string, optional)
+- `extracted_values` (array, optional; full replacement)
+- `folder_structure` (array of strings, optional)
+- `category_paths` (array of strings, optional)
+
+Returns the updated document record.
 
 ## Performance
 

@@ -14,6 +14,7 @@ from docstore.core.errors import DocStoreError, NotFoundError
 from docstore.core.logging import bind_correlation_id, get_logger
 from docstore.core.models import DocumentStatus
 from docstore.pipeline.stages import analyze_metadata, convert_to_markdown, index_chunks
+from docstore.storage.mappings import build_value_terms
 
 if TYPE_CHECKING:
     from docstore.chunking import MarkdownChunker
@@ -61,17 +62,13 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
         )
 
         await opensearch.update_status(document_id, DocumentStatus.INDEXING)
-        value_terms: list[str] = []
-        for value in analysis.extracted_values:
-            value_terms.append(f"{value.key}={value.value}")
-            if value.normalized and value.normalized != value.value:
-                value_terms.append(f"{value.key}={value.normalized}")
         await index_chunks(
             document_id=document_id,
+            title=document.title,
             markdown=markdown,
             doc_type=analysis.doc_type,
             category_paths=analysis.category_paths,
-            value_terms=value_terms,
+            value_terms=build_value_terms(analysis.extracted_values),
             opensearch=opensearch,
             chunker=chunker,
             embedder=embedder,

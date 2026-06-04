@@ -7,6 +7,18 @@ generated from the commit history (see `cliff.toml` and the release workflow).
 ## [Unreleased]
 
 ### Features
+- **api**: configurable CORS middleware for browser UIs (`API_CORS_ALLOW_ORIGINS` /
+  `API_CORS_ALLOW_CREDENTIALS`; default allows all origins).
+- **api/mcp**: document-level keyword search over title/content/type/category/values
+  with filters — `POST /documents/search` and the `search_documents` MCP tool (FR-20).
+- **search**: the semantic `/search` and `hybrid_search` now also match document
+  titles and accept an exact-`title` filter (title denormalised onto chunks).
+- **api/mcp**: edit document metadata — `PATCH /documents/{id}/metadata` and the
+  `update_document_metadata` MCP tool — updating `doc_type`, `extracted_values`,
+  `folder_structure` and `category_paths`, propagating changes to the search index.
+- **api**: `GET /documents/{id}/file` accepts `disposition=inline|attachment` for
+  in-browser preview (default `attachment`, unchanged).
+
 - **llm**: extract document metadata (classification, identifier/value extraction,
   hierarchical categorisation) with the `llm-structured-output` library — LangChain
   tool-calling into Pydantic schemas with automatic **retry on schema/type errors**

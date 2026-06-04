@@ -13,11 +13,14 @@ from urllib.parse import urlsplit
 from opensearchpy import AsyncOpenSearch
 from opensearchpy.helpers import async_bulk
 
-from docstore.core.errors import StorageError
+from docstore.core.errors import NotFoundError, StorageError
 from docstore.core.logging import get_logger
 from docstore.core.models import Chunk, Document, DocumentStatus, SearchHit
 from docstore.storage.mappings import (
+    build_document_filters,
+    build_document_search_body,
     build_hybrid_query,
+    build_value_terms,
     chunk_index_body,
     document_index_body,
     hybrid_pipeline_body,
@@ -77,7 +80,25 @@ class OpenSearchStore:
         """Create both indices (if missing) and the hybrid search pipeline."""
         await self._ensure_index(self._config.document_index, document_index_body())
         await self._ensure_index(self._config.chunk_index, chunk_index_body(self._config))
+        await self._ensure_chunk_fields()
         await self._ensure_pipeline()
+
+    async def _ensure_chunk_fields(self) -> None:
+        """Idempotently add newer chunk fields (e.g. ``title``) to an existing index."""
+        try:
+            await self.client.indices.put_mapping(
+                index=self._config.chunk_index,
+                body={
+                    "properties": {
+                        "title": {
+                            "type": "text",
+                            "fields": {"keyword": {"type": "keyword", "ignore_above": 512}},
+                        }
+                    }
+                },
+            )
+        except Exception as exc:
+            _log.warning("chunk_mapping_update_failed", error=str(exc))
 
     async def _ensure_index(self, name: str, body: dict[str, Any]) -> None:
         try:
@@ -358,6 +379,139 @@ class OpenSearchStore:
         total_count = total["value"] if isinstance(total, dict) else int(total)
         documents = [Document.model_validate(hit["_source"]) for hit in hits]
         return documents, total_count
+
+    async def search_documents(
+        self,
+        *,
+        query: str | None,
+        page: int,
+        page_size: int,
+        doc_type: str | None = None,
+        category_path: str | None = None,
+        title: str | None = None,
+        status: str | None = None,
+        extracted_values: dict[str, str] | None = None,
+    ) -> tuple[list[Document], int]:
+        """Keyword document search over title/content/metadata with filters (FR-20)."""
+        filters = build_document_filters(
+            doc_type=doc_type,
+            category_path=category_path,
+            title=title,
+            status=status,
+            extracted_values=extracted_values,
+        )
+        body = build_document_search_body(
+            query=query,
+            filters=filters,
+            from_=max(page - 1, 0) * page_size,
+            size=page_size,
+        )
+        try:
+            response = await self.client.search(index=self._config.document_index, body=body)
+        except Exception as exc:
+            raise StorageError(f"Document search failed: {exc}") from exc
+        hits = response["hits"]["hits"]
+        total = response["hits"]["total"]
+        total_count = total["value"] if isinstance(total, dict) else int(total)
+        documents = [Document.model_validate(hit["_source"]) for hit in hits]
+        return documents, total_count
+
+    async def update_document_fields(
+        self,
+        document_id: str,
+        *,
+        doc_type: str | None = None,
+        extracted_values: list[ExtractedValue] | None = None,
+        folder_structure: list[str] | None = None,
+        category_paths: list[str] | None = None,
+    ) -> Document:
+        """Patch editable metadata on a document and propagate to its chunks (FR-20).
+
+        Only provided fields are changed. Changes to ``doc_type``, ``category_paths``
+        or ``extracted_values`` are propagated to the document's chunks so search
+        filters stay consistent. Returns the refreshed document.
+        """
+        existing = await self.get_document(document_id)
+        if existing is None:
+            raise NotFoundError(f"Document '{document_id}' was not found.")
+
+        doc: dict[str, Any] = {"updated_at": datetime.now(UTC).isoformat()}
+        if doc_type is not None:
+            doc["doc_type"] = doc_type
+        if extracted_values is not None:
+            doc["extracted_values"] = [v.model_dump(mode="json") for v in extracted_values]
+        if folder_structure is not None:
+            doc["folder_structure"] = folder_structure
+        if category_paths is not None:
+            doc["category_paths"] = category_paths
+
+        try:
+            await self.client.update(
+                index=self._config.document_index,
+                id=document_id,
+                body={"doc": doc},
+                refresh=True,
+            )
+        except Exception as exc:
+            raise StorageError(
+                f"Failed to update metadata for document '{document_id}': {exc}"
+            ) from exc
+
+        if doc_type is not None or category_paths is not None or extracted_values is not None:
+            await self._propagate_to_chunks(
+                document_id,
+                doc_type=doc_type,
+                category_paths=category_paths,
+                value_terms=(
+                    build_value_terms(extracted_values) if extracted_values is not None else None
+                ),
+            )
+
+        updated = await self.get_document(document_id)
+        if updated is None:  # pragma: no cover - just updated successfully
+            raise StorageError(f"Document '{document_id}' vanished after update.")
+        return updated
+
+    async def _propagate_to_chunks(
+        self,
+        document_id: str,
+        *,
+        doc_type: str | None,
+        category_paths: list[str] | None,
+        value_terms: list[str] | None,
+    ) -> None:
+        """Update denormalised fields on a document's chunks via update_by_query."""
+        source_lines: list[str] = []
+        params: dict[str, Any] = {}
+        if doc_type is not None:
+            source_lines.append("ctx._source.doc_type = params.doc_type;")
+            params["doc_type"] = doc_type
+        if category_paths is not None:
+            source_lines.append("ctx._source.category_paths = params.category_paths;")
+            params["category_paths"] = category_paths
+        if value_terms is not None:
+            source_lines.append("ctx._source.value_terms = params.value_terms;")
+            params["value_terms"] = value_terms
+        if not source_lines:
+            return
+        try:
+            await self.client.update_by_query(
+                index=self._config.chunk_index,
+                body={
+                    "query": {"term": {"document_id": document_id}},
+                    "script": {
+                        "source": " ".join(source_lines),
+                        "lang": "painless",
+                        "params": params,
+                    },
+                },
+                refresh=True,
+                conflicts="proceed",
+            )
+        except Exception as exc:
+            raise StorageError(
+                f"Failed to propagate metadata to chunks of '{document_id}': {exc}"
+            ) from exc
 
     async def close(self) -> None:
         """Close the underlying client connection."""

@@ -25,6 +25,7 @@ async def search(services: ServicesDep, request: SearchRequest) -> SearchRespons
         top_k=request.top_k,
         doc_type=request.doc_type,
         category_path=request.category_path,
+        title=request.title,
         filters=request.filters or None,
     )
     return SearchResponse(query=request.query, hits=hits)
