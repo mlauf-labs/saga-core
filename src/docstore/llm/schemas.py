@@ -10,9 +10,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from docstore.core.models import ExtractedValue
+
+# Applied to every LLM-filled schema: trim stray whitespace the model adds and
+# silently drop any extra keys it returns, avoiding needless validation retries.
+_LLM_MODEL_CONFIG = ConfigDict(str_strip_whitespace=True, extra="ignore")
 
 
 def _stringify(value: Any) -> str:  # noqa: ANN401 - intentionally accepts any LLM output
@@ -25,21 +29,70 @@ def _stringify(value: Any) -> str:  # noqa: ANN401 - intentionally accepts any L
 
 
 class Classification(BaseModel):
-    """Result of document-type classification (FR-14)."""
+    """The single document type that best describes the document's content."""
 
-    doc_type: str
-    confidence: float = 1.0
-    rationale: str = ""
+    model_config = _LLM_MODEL_CONFIG
+
+    doc_type: str = Field(
+        description=(
+            "The single canonical document type, in lowercase snake_case. Prefer a "
+            "known label such as invoice, contract, insurance_policy, letter, receipt, "
+            "id_document, bank_statement, payslip, tax_document, certificate, report, "
+            "email, form, or other. If none fits, coin a concise snake_case label. "
+            "Examples: 'invoice', 'insurance_policy'."
+        )
+    )
+    confidence: float = Field(
+        default=1.0,
+        description="Confidence in the classification, from 0.0 (unsure) to 1.0 (certain).",
+    )
+    rationale: str = Field(
+        default="",
+        description="One short sentence justifying the chosen document type.",
+    )
 
 
 class ExtractedValueOut(BaseModel):
-    """A single extracted identifier/number as returned by the LLM (FR-15)."""
+    """A single identifier or numeric value found verbatim in the document."""
 
-    key: str = ""
-    type: str = "other"
-    value: str = ""
-    normalized: str | None = None
-    confidence: float = 1.0
+    model_config = _LLM_MODEL_CONFIG
+
+    key: str = Field(
+        default="",
+        description=(
+            "A short snake_case name for the value, e.g. 'invoice_number', "
+            "'contract_number', 'customer_number', 'order_number', 'phone_number', "
+            "'email', 'iban', 'vat_id', 'amount', 'date'. Lowercase, no spaces."
+        ),
+    )
+    type: str = Field(
+        default="other",
+        description=(
+            "The kind of value. One of: 'identifier' (invoice/contract/customer/order "
+            "numbers etc.), 'phone', 'email', 'iban', 'amount' (monetary value), "
+            "'date', 'percentage', or 'other'."
+        ),
+    )
+    value: str = Field(
+        default="",
+        description=(
+            "The value exactly as it appears in the document, verbatim, as a string "
+            "(e.g. 'INV-2026-00417', '184.50 EUR', '12.05.2026'). Do not invent values."
+        ),
+    )
+    normalized: str | None = Field(
+        default=None,
+        description=(
+            "A normalized form of the value, or null if not applicable: dates as "
+            "ISO-8601 'YYYY-MM-DD', monetary amounts as a plain decimal without "
+            "thousands separators or currency (e.g. '184.50'), phone numbers in E.164 "
+            "(e.g. '+4930123456'). Null when no sensible normalization applies."
+        ),
+    )
+    confidence: float = Field(
+        default=1.0,
+        description="Confidence that this value is correct, from 0.0 to 1.0.",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -67,16 +120,40 @@ class ExtractedValueOut(BaseModel):
 
 
 class ValueExtraction(BaseModel):
-    """Wrapper around the list of extracted values (FR-15)."""
+    """All relevant identifiers and numeric values extracted from the document."""
 
-    values: list[ExtractedValueOut] = Field(default_factory=list)
+    model_config = _LLM_MODEL_CONFIG
+
+    values: list[ExtractedValueOut] = Field(
+        default_factory=list,
+        description=(
+            "Every relevant identifier and numeric value found in the document "
+            "(phone/invoice/contract/customer numbers, IBANs, tax/VAT IDs, dates, "
+            "monetary amounts, percentages, ...). Return an empty list if none are present."
+        ),
+    )
 
 
 class Categorization(BaseModel):
-    """Hierarchical category paths for a document (FR-16/17)."""
+    """Hierarchical category placement of the document in the archive tree (FR-16/17)."""
 
-    paths: list[str] = Field(default_factory=list)
-    confidence: float = 1.0
+    model_config = _LLM_MODEL_CONFIG
+
+    paths: list[str] = Field(
+        default_factory=list,
+        description=(
+            "One or more hierarchical category paths using '/' as the level separator "
+            "and Title Case per level (e.g. 'Insurance/Health', 'Finance/Invoices/2026', "
+            "'Legal/Contracts'). Prefer 2-4 levels and reuse common top-level categories "
+            "(Insurance, Finance, Legal, Personal, Work, Health, Taxes, Property, "
+            "Vehicles). The FIRST path is the single best fit (canonical) and drives the "
+            "backup folder layout. Return at least one path."
+        ),
+    )
+    confidence: float = Field(
+        default=1.0,
+        description="Confidence in the categorisation, from 0.0 to 1.0.",
+    )
 
 
 class AnalysisResult(BaseModel):
