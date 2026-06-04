@@ -28,11 +28,19 @@ class _Recorder:
         text: str,
         *,
         system_prompt: str | None = None,
+        callbacks: Any = None,
         fallback_llm_model: Any = None,
         max_primary_retries: int = 3,
         max_fallback_retries: int = 3,
     ) -> tuple[BaseModel | None, StructuredOutputStats]:
-        self.calls.append({"schema": schema.__name__, "text": text, "system_prompt": system_prompt})
+        self.calls.append(
+            {
+                "schema": schema.__name__,
+                "text": text,
+                "system_prompt": system_prompt,
+                "callbacks": callbacks,
+            }
+        )
         return self.responses.get(schema.__name__), StructuredOutputStats()
 
 
@@ -70,6 +78,8 @@ async def test_analyze_combines_all_steps(monkeypatch: pytest.MonkeyPatch) -> No
     ]
     assert all(c["system_prompt"] for c in recorder.calls)
     assert "inv.pdf" in recorder.calls[0]["system_prompt"]
+    # Each step passes an observability callback to the extraction library.
+    assert all(c["callbacks"] for c in recorder.calls)
 
 
 async def test_analyze_classification_failure_falls_back(

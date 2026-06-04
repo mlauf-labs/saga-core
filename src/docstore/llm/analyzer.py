@@ -11,11 +11,13 @@ default rather than failing the whole document.
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
 from llm_structured_output import extract_from_text
 
 from docstore.core.logging import get_logger
+from docstore.llm.callbacks import LlmCallLogger
 from docstore.llm.schemas import (
     AnalysisResult,
     Categorization,
@@ -58,20 +60,44 @@ class DocumentAnalyzer:
     async def _extract[ModelT: BaseModel](
         self, *, step: str, schema: type[ModelT], system_prompt: str, text: str
     ) -> ModelT | None:
-        """Run one structured-extraction step; return ``None`` on failure (FR-18)."""
+        """Run one structured-extraction step; return ``None`` on failure (FR-18).
+
+        Logs the step duration, the number of LLM calls, the validation-retry count
+        and whether the fallback model was used, plus (via the callback) the exact
+        correction text sent back to the model on each retry (NFR-16).
+        """
+        callback = LlmCallLogger(step)
+        _log.info("analysis_step_start", step=step, chars=len(text))
+        started = time.monotonic()
         result, stats = await extract_from_text(
             self._model,
             schema,
             text,
             system_prompt=system_prompt,
+            callbacks=[callback],
             fallback_llm_model=self._fallback,
             max_primary_retries=self._max_primary_retries,
             max_fallback_retries=self._max_fallback_retries,
         )
+        elapsed_ms = round((time.monotonic() - started) * 1000)
         if result is None:
-            _log.warning("analysis_step_failed", step=step, retries=stats.total_retries)
-        elif stats.total_retries:
-            _log.info("analysis_step_retried", step=step, retries=stats.total_retries)
+            _log.warning(
+                "analysis_step_failed",
+                step=step,
+                llm_calls=callback.calls,
+                validation_retries=stats.total_retries,
+                fallback_used=stats.fallback_used,
+                elapsed_ms=elapsed_ms,
+            )
+        else:
+            _log.info(
+                "analysis_step_done",
+                step=step,
+                llm_calls=callback.calls,
+                validation_retries=stats.total_retries,
+                fallback_used=stats.fallback_used,
+                elapsed_ms=elapsed_ms,
+            )
         return result
 
     async def classify(self, *, title: str, content: str) -> Classification | None:

@@ -99,6 +99,32 @@ Logs are structured (NFR-16): coloured console in dev (`LOG_RENDERER=console`),
 JSON in prod (`LOG_RENDERER=json`). Each ingestion log line carries the document id as
 `correlation_id`. Health endpoints back compose healthchecks for ordered startup.
 
+### LLM analysis logging
+
+Each metadata-analysis step (classification, value extraction, categorisation) logs:
+
+- `analysis_step_start` — `step`, input `chars`.
+- `analysis_step_done` / `analysis_step_failed` — `llm_calls` (number of LLM calls in
+  the step), `validation_retries` (schema/type retries), `fallback_used`, `elapsed_ms`.
+- `llm_correction_sent` — on a retry, the exact field-level correction text sent back
+  to the model (truncated). This shows *why* a step is retrying.
+
+If a step is slow, check `elapsed_ms` and `llm_calls`: a high `elapsed_ms` with few
+calls means the model itself is slow (raise the model's throughput or lower
+`llm.providers.<p>.request_timeout`); many `llm_calls` with `llm_correction_sent`
+entries means the model keeps producing invalid output (use a stronger model or a
+`llm.fallback_model`).
+
+### Retry layers
+
+A single analysis step can issue multiple LLM calls. Retries are intentionally **not**
+stacked: the OpenAI client's own retries are disabled (`max_retries=0`) because the
+structured-output library already retries transient/network errors. Validation retries
+(`llm.max_primary_retries` / `max_fallback_retries`) re-prompt the model with the
+correction text. The ARQ worker additionally retries the whole job up to `max_tries`
+on unhandled failures. A too-low `request_timeout` against a slow model multiplies wait
+time across these layers — tune the model/endpoint first.
+
 ## Backups
 
 Use `docstore-backup` to export everything to a directory tree — see
