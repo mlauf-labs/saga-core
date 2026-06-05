@@ -64,6 +64,16 @@ async def test_build_server_registers_all_tools(search: MagicMock) -> None:
     assert all(tool.description for tool in tools)
 
 
+async def test_every_tool_parameter_has_a_description(search: MagicMock) -> None:
+    mcp = build_server(AppConfig(), search)
+    tools = await mcp.list_tools()
+    for tool in tools:
+        properties = tool.inputSchema.get("properties", {})
+        assert properties, f"{tool.name} exposes no parameters"
+        for name, schema in properties.items():
+            assert schema.get("description"), f"{tool.name}.{name} is missing a description"
+
+
 async def test_search_documents_tool(search: MagicMock) -> None:
     mcp = build_server(AppConfig(), search)
     result: Any = await mcp.call_tool("search_documents", {"query": "invoice"})
