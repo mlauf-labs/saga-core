@@ -7,9 +7,10 @@ The search path reuses the same :class:`SearchService` as the REST API.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 
 from docstore.core.logging import get_logger
 from docstore.core.models import ExtractedValue
@@ -49,12 +50,26 @@ def build_server(
     )
 
     async def hybrid_search(
-        query: str,
-        top_k: int | None = None,
-        doc_type: str | None = None,
-        category_path: str | None = None,
-        title: str | None = None,
-        filters: dict[str, str] | None = None,
+        query: Annotated[
+            str, Field(description="Natural-language query or keywords; also matches titles.")
+        ],
+        top_k: Annotated[
+            int | None, Field(description="Max snippets to return (bounded by the server max).")
+        ] = None,
+        doc_type: Annotated[
+            str | None, Field(description="Restrict to a document type, e.g. 'invoice'.")
+        ] = None,
+        category_path: Annotated[
+            str | None,
+            Field(description="Restrict to a category subtree, e.g. 'Insurance/Health'."),
+        ] = None,
+        title: Annotated[
+            str | None, Field(description="Restrict to an exact document title.")
+        ] = None,
+        filters: Annotated[
+            dict[str, str] | None,
+            Field(description="Match extracted values, e.g. {'invoice_number': '12345'}."),
+        ] = None,
     ) -> list[dict[str, Any]]:
         hits = await search.hybrid_search(
             query=query,
@@ -67,14 +82,26 @@ def build_server(
         return [hit.model_dump() for hit in hits]
 
     async def search_documents(
-        query: str | None = None,
-        page: int = 1,
-        page_size: int = 25,
-        doc_type: str | None = None,
-        category_path: str | None = None,
-        title: str | None = None,
-        status: str | None = None,
-        filters: dict[str, str] | None = None,
+        query: Annotated[
+            str | None,
+            Field(description="Keywords over title/content/metadata; omit to browse with filters."),
+        ] = None,
+        page: Annotated[int, Field(description="1-based page number.")] = 1,
+        page_size: Annotated[int, Field(description="Results per page.")] = 25,
+        doc_type: Annotated[
+            str | None, Field(description="Filter by document type, e.g. 'invoice'.")
+        ] = None,
+        category_path: Annotated[
+            str | None, Field(description="Filter by a category subtree, e.g. 'Finance'.")
+        ] = None,
+        title: Annotated[str | None, Field(description="Filter by exact document title.")] = None,
+        status: Annotated[
+            str | None, Field(description="Filter by processing status, e.g. 'ready'.")
+        ] = None,
+        filters: Annotated[
+            dict[str, str] | None,
+            Field(description="Match extracted values, e.g. {'invoice_number': '12345'}."),
+        ] = None,
     ) -> dict[str, Any]:
         documents, total = await search.search_documents(
             query=query,
@@ -103,11 +130,27 @@ def build_server(
         }
 
     async def update_document_metadata(
-        document_id: str,
-        doc_type: str | None = None,
-        extracted_values: list[dict[str, Any]] | None = None,
-        folder_structure: list[str] | None = None,
-        category_paths: list[str] | None = None,
+        document_id: Annotated[str, Field(description="The id of the document to update.")],
+        doc_type: Annotated[
+            str | None, Field(description="New document type label, e.g. 'invoice'.")
+        ] = None,
+        extracted_values: Annotated[
+            list[dict[str, Any]] | None,
+            Field(
+                description=(
+                    "Full replacement list of extracted values, each with "
+                    "{key, type, value, normalized?, confidence?}."
+                )
+            ),
+        ] = None,
+        folder_structure: Annotated[
+            list[str] | None,
+            Field(description="Ordered hierarchical paths; the first is canonical."),
+        ] = None,
+        category_paths: Annotated[
+            list[str] | None,
+            Field(description="Category paths, e.g. ['Insurance/Health']."),
+        ] = None,
     ) -> dict[str, Any]:
         values = (
             [ExtractedValue.model_validate(v) for v in extracted_values]
@@ -124,16 +167,25 @@ def build_server(
         return document.model_dump(mode="json")
 
     async def get_category_tree(
-        prefix: str | None = None, max_depth: int | None = None
+        prefix: Annotated[
+            str | None, Field(description="Only return the subtree under this path.")
+        ] = None,
+        max_depth: Annotated[
+            int | None, Field(description="Limit the returned tree depth (root is depth 1).")
+        ] = None,
     ) -> list[dict[str, Any]]:
         tree = await search.get_category_tree(prefix=prefix, max_depth=max_depth)
         return [node.model_dump() for node in tree]
 
     async def list_documents_in_category(
-        category_path: str,
-        include_subtree: bool = True,
-        page: int = 1,
-        page_size: int = 25,
+        category_path: Annotated[
+            str, Field(description="The category path, e.g. 'Insurance/Health'.")
+        ],
+        include_subtree: Annotated[
+            bool, Field(description="Include documents in descendant categories.")
+        ] = True,
+        page: Annotated[int, Field(description="1-based page number.")] = 1,
+        page_size: Annotated[int, Field(description="Results per page.")] = 25,
     ) -> dict[str, Any]:
         documents, total = await search.list_documents_in_category(
             category_path=category_path,
@@ -157,7 +209,12 @@ def build_server(
             "total": total,
         }
 
-    async def get_document(document_id: str, include_content: bool = True) -> dict[str, Any] | None:
+    async def get_document(
+        document_id: Annotated[str, Field(description="The id of the document to fetch.")],
+        include_content: Annotated[
+            bool, Field(description="Include the full converted Markdown text.")
+        ] = True,
+    ) -> dict[str, Any] | None:
         document = await search.get_document(document_id)
         if document is None:
             return None

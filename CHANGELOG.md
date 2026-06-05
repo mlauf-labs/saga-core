@@ -7,6 +7,9 @@ generated from the commit history (see `cliff.toml` and the release workflow).
 ## [Unreleased]
 
 ### Features
+- **mcp**: every MCP tool parameter now carries a description in the generated input
+  schema (via `Annotated[..., Field(description=...)]`), so agents get per-argument
+  guidance in addition to the tool-level description.
 - **api**: `POST /documents/{id}/reanalyze` re-runs the full ingestion pipeline for an
   existing document (re-convert, regenerate metadata, re-chunk, re-index) — keeps the id
   and binary, resets status to `pending`, re-enqueues the job. The indexing stage now
