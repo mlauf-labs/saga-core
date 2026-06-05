@@ -101,6 +101,8 @@ with automatic retry on schema/type errors). Relevant `llm` keys:
 | `max_primary_retries` | `3` | Validation-retry attempts on the primary model. |
 | `max_fallback_retries` | `3` | Validation-retry attempts on the fallback model. |
 | `fallback_model` | `` (off) | Optional fallback model (same provider) used when the primary exhausts its retries. |
+| `category_cache_ttl_seconds` | `300` | TTL of the in-memory existing-category catalog fed to categorisation; DB writes invalidate it immediately (FR-16). |
+| `max_categories_in_prompt` | `200` | Max existing category paths shown to the model as context. |
 
 Per-provider `max_output_tokens` and `request_timeout` bound generation length and call
 duration. Models must support **tool calling** (e.g. `llama3.2:3b`, `llama3.1:8b`,

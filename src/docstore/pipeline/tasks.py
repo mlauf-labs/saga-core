@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from docstore.converters import ConverterRegistry
     from docstore.embeddings import EmbeddingProvider
     from docstore.llm import DocumentAnalyzer
+    from docstore.search import CategoryCatalog
     from docstore.storage import MinioStore, OpenSearchStore
 
 _log = get_logger("docstore.pipeline.tasks")
@@ -39,6 +40,7 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
     analyzer: DocumentAnalyzer = ctx["analyzer"]
     chunker: MarkdownChunker = ctx["chunker"]
     embedder: EmbeddingProvider = ctx["embedder"]
+    catalog: CategoryCatalog = ctx["catalog"]
 
     try:
         await opensearch.update_status(document_id, DocumentStatus.CONVERTING)
@@ -59,6 +61,7 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
             markdown=markdown,
             opensearch=opensearch,
             analyzer=analyzer,
+            existing_categories=await catalog.get_paths(),
         )
 
         await opensearch.update_status(document_id, DocumentStatus.INDEXING)

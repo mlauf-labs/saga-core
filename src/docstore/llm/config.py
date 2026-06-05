@@ -47,6 +47,11 @@ class LlmConfig(BaseModel):
     # Validation-retry budgets for structured extraction (retry on schema/type errors).
     max_primary_retries: int = 3
     max_fallback_retries: int = 3
+    # How long the existing-category catalog (fed to the categorisation step) is cached
+    # in memory before being re-queried. Writes invalidate it immediately (FR-16).
+    category_cache_ttl_seconds: float = 300.0
+    # Maximum number of existing category paths passed to the LLM as context.
+    max_categories_in_prompt: int = 200
 
     @property
     def active(self) -> LlmProviderSettings:

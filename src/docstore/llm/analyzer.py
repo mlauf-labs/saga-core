@@ -46,6 +46,7 @@ class DocumentAnalyzer:
         max_input_chars: int = 12000,
         max_primary_retries: int = 3,
         max_fallback_retries: int = 3,
+        max_categories_in_prompt: int = 200,
     ) -> None:
         self._model = chat_model
         self._fallback = fallback_model
@@ -53,9 +54,21 @@ class DocumentAnalyzer:
         self._max_input_chars = max_input_chars
         self._max_primary_retries = max_primary_retries
         self._max_fallback_retries = max_fallback_retries
+        self._max_categories_in_prompt = max_categories_in_prompt
 
     def _truncate(self, content: str) -> str:
         return content[: self._max_input_chars]
+
+    def _format_categories(self, existing_categories: list[str] | None) -> str:
+        """Render existing category paths as a bounded bullet list for the prompt."""
+        paths = [p for p in (existing_categories or []) if p.strip()]
+        if not paths:
+            return "(none yet - this is a fresh archive; create sensible new folders)"
+        shown = paths[: self._max_categories_in_prompt]
+        lines = [f"- {path}" for path in shown]
+        if len(paths) > len(shown):
+            lines.append(f"- ... ({len(paths) - len(shown)} more)")
+        return "\n".join(lines)
 
     async def _extract[ModelT: BaseModel](
         self, *, step: str, schema: type[ModelT], system_prompt: str, text: str
@@ -119,12 +132,18 @@ class DocumentAnalyzer:
         )
 
     async def categorize(
-        self, *, content: str, doc_type: str, extracted_values: str
+        self,
+        *,
+        content: str,
+        doc_type: str,
+        extracted_values: str,
+        existing_categories: list[str] | None = None,
     ) -> Categorization | None:
         system = self._prompts.render(
             "analysis/categorization.md",
             doc_type=doc_type,
             extracted_values=extracted_values,
+            existing_categories=self._format_categories(existing_categories),
         )
         return await self._extract(
             step="categorization",
@@ -133,8 +152,15 @@ class DocumentAnalyzer:
             text=self._truncate(content),
         )
 
-    async def analyze(self, *, title: str, content: str) -> AnalysisResult:
-        """Run all analysis steps and return the combined, validated result."""
+    async def analyze(
+        self, *, title: str, content: str, existing_categories: list[str] | None = None
+    ) -> AnalysisResult:
+        """Run all analysis steps and return the combined, validated result.
+
+        ``existing_categories`` are the folder paths already present in the archive;
+        they are shown to the model so it can place the document into the established
+        structure or extend it consistently (FR-16).
+        """
         classification = await self.classify(title=title, content=content)
         doc_type = classification.doc_type if classification else "unknown"
 
@@ -144,7 +170,10 @@ class DocumentAnalyzer:
         values_summary = ", ".join(f"{v.key}={v.value}" for v in values) or "none"
 
         categorization = await self.categorize(
-            content=content, doc_type=doc_type, extracted_values=values_summary
+            content=content,
+            doc_type=doc_type,
+            extracted_values=values_summary,
+            existing_categories=existing_categories,
         )
         paths = [p.strip() for p in categorization.paths if p.strip()] if categorization else []
 

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
+from docstore.search.catalog import CategoryCatalog
 from docstore.search.service import SearchService
 from docstore.search.tree import build_category_tree
 
-__all__ = ["SearchService", "build_category_tree"]
+__all__ = ["CategoryCatalog", "SearchService", "build_category_tree"]

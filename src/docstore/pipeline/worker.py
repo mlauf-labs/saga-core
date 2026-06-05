@@ -23,6 +23,7 @@ from docstore.llm import (
 )
 from docstore.pipeline.queue import redis_settings
 from docstore.pipeline.tasks import ingest_document
+from docstore.search import CategoryCatalog
 from docstore.storage import MinioStore, OpenSearchStore
 
 if TYPE_CHECKING:
@@ -47,7 +48,11 @@ async def on_startup(ctx: dict[str, Any]) -> None:
         max_input_chars=llm_config.max_input_chars,
         max_primary_retries=llm_config.max_primary_retries,
         max_fallback_retries=llm_config.max_fallback_retries,
+        max_categories_in_prompt=llm_config.max_categories_in_prompt,
     )
+    # Existing-folder catalog fed to categorisation; invalidated on category writes.
+    catalog = CategoryCatalog(opensearch, ttl_seconds=llm_config.category_cache_ttl_seconds)
+    opensearch.register_write_listener(catalog.invalidate)
     chunker = MarkdownChunker(config.chunking)
     embedder = build_embedding_provider(load_embeddings_config())
     if embedder.dimension != config.opensearch.vector_dimension:
@@ -64,6 +69,7 @@ async def on_startup(ctx: dict[str, Any]) -> None:
     ctx["minio"] = minio
     ctx["converters"] = converters
     ctx["analyzer"] = analyzer
+    ctx["catalog"] = catalog
     ctx["chunker"] = chunker
     ctx["embedder"] = embedder
     _log.info("worker_ready")

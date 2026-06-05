@@ -27,6 +27,8 @@ from docstore.storage.mappings import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from docstore.core.config import OpenSearchConfig
     from docstore.core.models import ExtractedValue
 
@@ -60,6 +62,17 @@ class OpenSearchStore:
     def __init__(self, config: OpenSearchConfig, client: AsyncOpenSearch | None = None) -> None:
         self._config = config
         self._client = client
+        # Callbacks invoked after writes that can change the set of categories, so
+        # caches (e.g. the category catalog) can invalidate themselves (FR-16).
+        self._write_listeners: list[Callable[[], None]] = []
+
+    def register_write_listener(self, listener: Callable[[], None]) -> None:
+        """Register a callback invoked after category-affecting writes."""
+        self._write_listeners.append(listener)
+
+    def _notify_write(self) -> None:
+        for listener in self._write_listeners:
+            listener()
 
     @property
     def client(self) -> AsyncOpenSearch:
@@ -133,6 +146,7 @@ class OpenSearchStore:
             )
         except Exception as exc:
             raise StorageError(f"Failed to index document '{document.document_id}': {exc}") from exc
+        self._notify_write()
 
     async def get_document(self, document_id: str) -> Document | None:
         """Return a document by id, or ``None`` if it does not exist."""
@@ -208,6 +222,7 @@ class OpenSearchStore:
             raise StorageError(
                 f"Failed to persist metadata for document '{document_id}': {exc}"
             ) from exc
+        self._notify_write()
 
     async def index_chunks(self, chunks: list[Chunk]) -> int:
         """Bulk-index chunk/vector records. Returns the number indexed."""
@@ -246,6 +261,7 @@ class OpenSearchStore:
             raise StorageError(
                 f"Failed to delete document '{document_id}' and its chunks: {exc}"
             ) from exc
+        self._notify_write()
 
     async def scroll_documents(
         self, *, page_size: int, search_after: list[Any] | None = None
@@ -467,6 +483,7 @@ class OpenSearchStore:
                 ),
             )
 
+        self._notify_write()
         updated = await self.get_document(document_id)
         if updated is None:  # pragma: no cover - just updated successfully
             raise StorageError(f"Document '{document_id}' vanished after update.")
