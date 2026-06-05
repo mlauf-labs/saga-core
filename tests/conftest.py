@@ -11,7 +11,7 @@ from docstore.api.app import create_app
 from docstore.api.dependencies import Services
 from docstore.core.config import AppConfig
 from docstore.core.errors import NotFoundError
-from docstore.core.models import CategoryNode, Document, ExtractedValue, SearchHit
+from docstore.core.models import CategoryNode, Document, DocumentStatus, ExtractedValue, SearchHit
 
 TEST_TOKEN = "test-token"
 
@@ -30,6 +30,13 @@ class InMemoryDocumentStore:
 
     async def index_document(self, document: Document) -> None:
         self.docs[document.document_id] = document
+
+    async def update_status(
+        self, document_id: str, status: DocumentStatus, error: str | None = None
+    ) -> None:
+        doc = self.docs.get(document_id)
+        if doc is not None:
+            self.docs[document_id] = doc.model_copy(update={"status": status, "error": error})
 
     async def delete_document(self, document_id: str) -> None:
         self.docs.pop(document_id, None)

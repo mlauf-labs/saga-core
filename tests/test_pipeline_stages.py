@@ -41,6 +41,7 @@ def opensearch() -> MagicMock:
     store.update_status = AsyncMock()
     store.update_metadata = AsyncMock()
     store.index_chunks = AsyncMock(return_value=2)
+    store.delete_chunks = AsyncMock()
     return store
 
 
@@ -139,6 +140,8 @@ async def test_index_chunks_builds_and_indexes(
         embedder=embedder,
     )
     assert indexed == 2
+    # Stale chunks are cleared before re-indexing (idempotent re-runs).
+    opensearch.delete_chunks.assert_awaited_once_with("d1")
     chunks = opensearch.index_chunks.await_args.args[0]
     assert [c.chunk_id for c in chunks] == ["d1:0", "d1:1"]
     assert chunks[0].embedding == [0.1, 0.2]

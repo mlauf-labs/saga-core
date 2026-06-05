@@ -140,6 +140,31 @@ def test_patch_metadata_requires_auth(client: TestClient) -> None:
     assert client.patch("/documents/d1/metadata", json={"doc_type": "x"}).status_code == 401
 
 
+# --- Reanalyze ---
+
+
+def test_reanalyze_requires_auth(client: TestClient) -> None:
+    assert client.post("/documents/d1/reanalyze").status_code == 401
+
+
+def test_reanalyze_enqueues_and_sets_pending(
+    client: TestClient, auth_headers: dict[str, str], services: Services
+) -> None:
+    _seed(services)
+    response = client.post("/documents/d1/reanalyze", headers=auth_headers)
+    assert response.status_code == 202
+    body = response.json()
+    assert body["document_id"] == "d1"
+    assert body["status"] == "pending"
+    # Ingestion job re-enqueued and the stored status reset to pending.
+    assert services.queue.jobs == [("ingest_document", ("d1",))]  # type: ignore[attr-defined]
+    assert services.opensearch.docs["d1"].status.value == "pending"  # type: ignore[attr-defined]
+
+
+def test_reanalyze_missing_document_404(client: TestClient, auth_headers: dict[str, str]) -> None:
+    assert client.post("/documents/nope/reanalyze", headers=auth_headers).status_code == 404
+
+
 # --- File disposition ---
 
 

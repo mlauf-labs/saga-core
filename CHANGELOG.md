@@ -7,6 +7,10 @@ generated from the commit history (see `cliff.toml` and the release workflow).
 ## [Unreleased]
 
 ### Features
+- **api**: `POST /documents/{id}/reanalyze` re-runs the full ingestion pipeline for an
+  existing document (re-convert, regenerate metadata, re-chunk, re-index) — keeps the id
+  and binary, resets status to `pending`, re-enqueues the job. The indexing stage now
+  clears stale chunks before re-indexing, so re-runs are idempotent.
 - **llm**: categorise documents into the **existing** folder structure (FR-16). The
   existing category paths are queried once, cached in memory (`CategoryCatalog`, TTL
   `llm.category_cache_ttl_seconds`) and passed to the categorisation step; the model
