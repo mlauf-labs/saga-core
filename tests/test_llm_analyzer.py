@@ -82,6 +82,43 @@ async def test_analyze_combines_all_steps(monkeypatch: pytest.MonkeyPatch) -> No
     assert all(c["callbacks"] for c in recorder.calls)
 
 
+async def test_categorization_prompt_includes_existing_categories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _patch(
+        monkeypatch,
+        {
+            "Classification": Classification(doc_type="invoice"),
+            "ValueExtraction": ValueExtraction(values=[]),
+            "Categorization": Categorization(paths=["Finance/Invoices"]),
+        },
+    )
+    await _analyzer().analyze(
+        title="x",
+        content="y",
+        existing_categories=["Finance/Invoices", "Insurance/Health"],
+    )
+    cat_prompt = next(c["system_prompt"] for c in recorder.calls if c["schema"] == "Categorization")
+    assert "Finance/Invoices" in cat_prompt
+    assert "Insurance/Health" in cat_prompt
+
+
+async def test_categorization_prompt_handles_no_existing_categories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _patch(
+        monkeypatch,
+        {
+            "Classification": Classification(doc_type="invoice"),
+            "ValueExtraction": ValueExtraction(values=[]),
+            "Categorization": Categorization(paths=["Finance"]),
+        },
+    )
+    await _analyzer().analyze(title="x", content="y", existing_categories=[])
+    cat_prompt = next(c["system_prompt"] for c in recorder.calls if c["schema"] == "Categorization")
+    assert "none yet" in cat_prompt.lower()
+
+
 async def test_analyze_classification_failure_falls_back(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

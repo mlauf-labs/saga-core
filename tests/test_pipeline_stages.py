@@ -167,6 +167,12 @@ async def test_index_chunks_no_chunks_returns_zero(
     opensearch.index_chunks.assert_not_awaited()
 
 
+def _make_catalog() -> MagicMock:
+    fake = MagicMock()
+    fake.get_paths = AsyncMock(return_value=["Finance/Invoices"])
+    return fake
+
+
 def _full_ctx(
     opensearch: MagicMock,
     minio: MagicMock,
@@ -182,6 +188,7 @@ def _full_ctx(
         "analyzer": analyzer,
         "chunker": chunker,
         "embedder": embedder,
+        "catalog": _make_catalog(),
     }
 
 
@@ -203,6 +210,8 @@ async def test_ingest_document_success_sets_ready(
         DocumentStatus.READY,
     ]
     analyzer.analyze.assert_awaited_once()
+    # Existing folder categories from the catalog are passed to analysis (FR-16).
+    assert analyzer.analyze.await_args.kwargs["existing_categories"] == ["Finance/Invoices"]
     opensearch.index_chunks.assert_awaited_once()
 
 

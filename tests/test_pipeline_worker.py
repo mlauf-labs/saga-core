@@ -57,6 +57,7 @@ async def test_on_startup_bootstraps_stores(monkeypatch: pytest.MonkeyPatch) -> 
         "minio",
         "converters",
         "analyzer",
+        "catalog",
         "chunker",
         "embedder",
     ):

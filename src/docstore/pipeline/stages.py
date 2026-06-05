@@ -61,9 +61,16 @@ async def analyze_metadata(
     markdown: str,
     opensearch: OpenSearchStore,
     analyzer: DocumentAnalyzer,
+    existing_categories: list[str] | None = None,
 ) -> AnalysisResult:
-    """Run LLM analysis and persist the extracted metadata (FR-5/14/15/16)."""
-    result = await analyzer.analyze(title=title, content=markdown)
+    """Run LLM analysis and persist the extracted metadata (FR-5/14/15/16).
+
+    ``existing_categories`` are passed to the categorisation step so the document is
+    sorted into the existing folder structure where possible (FR-16).
+    """
+    result = await analyzer.analyze(
+        title=title, content=markdown, existing_categories=existing_categories
+    )
     await opensearch.update_metadata(
         document_id,
         doc_type=result.doc_type,

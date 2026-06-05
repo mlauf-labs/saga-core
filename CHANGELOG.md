@@ -7,6 +7,13 @@ generated from the commit history (see `cliff.toml` and the release workflow).
 ## [Unreleased]
 
 ### Features
+- **llm**: categorise documents into the **existing** folder structure (FR-16). The
+  existing category paths are queried once, cached in memory (`CategoryCatalog`, TTL
+  `llm.category_cache_ttl_seconds`) and passed to the categorisation step; the model
+  reuses matching folders or creates new ones that fit the established conventions. The
+  catalog is invalidated immediately on category-affecting DB writes (document create,
+  metadata update, delete) so it stays current. New config:
+  `llm.category_cache_ttl_seconds`, `llm.max_categories_in_prompt`.
 - **api**: configurable CORS middleware for browser UIs (`API_CORS_ALLOW_ORIGINS` /
   `API_CORS_ALLOW_CREDENTIALS`; default allows all origins).
 - **api/mcp**: document-level keyword search over title/content/type/category/values

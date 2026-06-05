@@ -338,6 +338,27 @@ async def test_update_document_fields_missing_raises(
         await store.update_document_fields("missing", doc_type="x")
 
 
+async def test_write_listener_fires_on_index_and_delete(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    fired: list[str] = []
+    store.register_write_listener(lambda: fired.append("x"))
+    await store.index_document(_make_document())
+    await store.delete_document("d1")
+    # index_document + delete_document each notify once.
+    assert len(fired) == 2
+
+
+async def test_write_listener_fires_on_metadata_update(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    fired: list[str] = []
+    store.register_write_listener(lambda: fired.append("x"))
+    fake_client.get.return_value = {"_source": _make_document().model_dump(mode="json")}
+    await store.update_document_fields("d1", category_paths=["A/B"])
+    assert fired == ["x"]
+
+
 async def test_close(store: OpenSearchStore, fake_client: MagicMock) -> None:
     await store.close()
     fake_client.close.assert_awaited_once()

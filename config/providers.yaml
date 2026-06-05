@@ -11,6 +11,10 @@ llm:
   # errors so it can self-correct (retry on type errors).
   max_primary_retries: 3
   max_fallback_retries: 3
+  # Existing-category catalog fed to the categorisation step: in-memory cache TTL and
+  # how many existing category paths to show the model as context (FR-16).
+  category_cache_ttl_seconds: 300.0
+  max_categories_in_prompt: 200
   providers:
     ollama:
       base_url: ${OLLAMA_URL:-http://ollama:11434}

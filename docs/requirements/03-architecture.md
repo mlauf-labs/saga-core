@@ -160,6 +160,17 @@ The tree is **derived** from these paths (no separate tree store) via an aggrega
 query, exposed by both REST (`/categories/tree`, `/categories/{path}/documents`) and
 MCP (`get_category_tree`, `list_documents_in_category`).
 
+**Categorising into the existing structure (FR-16).** During analysis the existing
+category paths are fetched once and cached in memory (`CategoryCatalog`, TTL
+`llm.category_cache_ttl_seconds`) and passed to the LLM categorisation step as context.
+The model is instructed to **reuse matching existing folders** verbatim, or otherwise
+create new paths that fit the established naming/depth conventions (it may do both, and
+a document may land in multiple folders). The catalog registers as a **write listener**
+on `OpenSearchStore`, so any DB write that can change categories (document create,
+metadata update, delete) invalidates it immediately and the next document sees an
+up-to-date structure. No separate tree is regenerated when a document is simply placed
+into an existing folder.
+
 ---
 
 ## 6. LLM & embeddings abstraction
