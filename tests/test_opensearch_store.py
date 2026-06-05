@@ -338,6 +338,13 @@ async def test_update_document_fields_missing_raises(
         await store.update_document_fields("missing", doc_type="x")
 
 
+async def test_delete_chunks(store: OpenSearchStore, fake_client: MagicMock) -> None:
+    await store.delete_chunks("d1")
+    fake_client.delete_by_query.assert_awaited_once()
+    body = fake_client.delete_by_query.await_args.kwargs["body"]
+    assert body["query"]["term"]["document_id"] == "d1"
+
+
 async def test_write_listener_fires_on_index_and_delete(
     store: OpenSearchStore, fake_client: MagicMock
 ) -> None:

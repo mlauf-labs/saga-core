@@ -242,6 +242,20 @@ class OpenSearchStore:
             raise StorageError(f"Failed to bulk-index {len(chunks)} chunks: {exc}") from exc
         return int(success)
 
+    async def delete_chunks(self, document_id: str) -> None:
+        """Delete all chunks of a document (used before re-indexing on re-analysis)."""
+        try:
+            await self.client.delete_by_query(
+                index=self._config.chunk_index,
+                body={"query": {"term": {"document_id": document_id}}},
+                refresh=True,
+                conflicts="proceed",
+            )
+        except Exception as exc:
+            raise StorageError(
+                f"Failed to delete chunks of document '{document_id}': {exc}"
+            ) from exc
+
     async def delete_document(self, document_id: str) -> None:
         """Delete a document and all of its chunks (cascade, FR-26)."""
         try:

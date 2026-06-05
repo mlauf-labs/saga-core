@@ -91,6 +91,13 @@ Full document record. Query `include_content` (bool, default `true`) controls wh
 Lightweight status view (FR-12): `{ document_id, status, error }`. `status` is one of
 `pending | converting | analyzing | indexing | ready | failed`.
 
+### `POST /documents/{document_id}/reanalyze`
+Re-run the full ingestion pipeline for an existing document (re-convert the stored
+binary, regenerate metadata, re-chunk and re-index). The document id and stored binary
+are kept; the status is reset to `pending` and the job is re-enqueued. Stale chunks are
+cleared before re-indexing. Returns `202 Accepted` with `{ document_id, status, title }`;
+`404` if unknown. Poll `GET /documents/{id}/status` until `ready`.
+
 ### `PATCH /documents/{document_id}/metadata`
 Update editable metadata (FR-20). JSON body with any of `doc_type`,
 `extracted_values`, `folder_structure`, `category_paths`; provided fields replace,

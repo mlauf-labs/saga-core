@@ -13,7 +13,13 @@ from docstore.core.errors import DocStoreError
 
 if TYPE_CHECKING:
     from docstore.core.config import AppConfig
-    from docstore.core.models import CategoryNode, Document, ExtractedValue, SearchHit
+    from docstore.core.models import (
+        CategoryNode,
+        Document,
+        DocumentStatus,
+        ExtractedValue,
+        SearchHit,
+    )
 
 
 class DocumentStore(Protocol):
@@ -22,6 +28,9 @@ class DocumentStore(Protocol):
     async def find_by_hash(self, content_hash: str) -> Document | None: ...
     async def get_document(self, document_id: str) -> Document | None: ...
     async def index_document(self, document: Document) -> None: ...
+    async def update_status(
+        self, document_id: str, status: DocumentStatus, error: str | None = ...
+    ) -> None: ...
     async def delete_document(self, document_id: str) -> None: ...
     async def list_documents(self, *, page: int, page_size: int) -> tuple[list[Document], int]: ...
     async def scroll_documents(

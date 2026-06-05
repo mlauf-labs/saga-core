@@ -103,6 +103,8 @@ async def index_chunks(
 
     Returns the number of chunks indexed.
     """
+    # Clear any existing chunks so re-analysis does not leave stale ones behind.
+    await opensearch.delete_chunks(document_id)
     texts = chunker.split(markdown)
     if not texts:
         _log.warning("no_chunks", document_id=document_id)

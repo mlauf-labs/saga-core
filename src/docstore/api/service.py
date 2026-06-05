@@ -108,6 +108,20 @@ async def get_document(services: Services, document_id: str) -> Document:
     return document
 
 
+async def reanalyze_document(services: Services, document_id: str) -> Document:
+    """Re-run the full ingestion pipeline for an existing document (FR-5/FR-11).
+
+    Re-converts the stored binary and regenerates metadata, chunks and embeddings.
+    The document id and stored binary are kept; the status is reset to ``pending`` and
+    the ingestion job is re-enqueued.
+    """
+    document = await get_document(services, document_id)
+    await services.opensearch.update_status(document_id, DocumentStatus.PENDING)
+    await services.queue.enqueue_job(INGEST_JOB, document_id)
+    _log.info("document_reanalyze_requested", document_id=document_id)
+    return document.model_copy(update={"status": DocumentStatus.PENDING, "error": None})
+
+
 async def update_metadata(
     services: Services, document_id: str, patch: DocumentMetadataPatch
 ) -> Document:

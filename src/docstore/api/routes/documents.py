@@ -139,6 +139,19 @@ async def download_document_file(
     )
 
 
+@router.post(
+    "/{document_id}/reanalyze",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=UploadAcceptedResponse,
+    summary="Re-run analysis and regenerate metadata for an existing document",
+)
+async def reanalyze_document(services: ServicesDep, document_id: str) -> UploadAcceptedResponse:
+    document = await service.reanalyze_document(services, document_id)
+    return UploadAcceptedResponse(
+        document_id=document.document_id, status=document.status, title=document.title
+    )
+
+
 @router.patch(
     "/{document_id}/metadata",
     response_model=DocumentResponse,
