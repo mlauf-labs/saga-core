@@ -31,9 +31,7 @@ async def test_document_notes_crud(
     )
     assert updated.json()["content"] == "done"
 
-    deleted = client.delete(
-        f"/documents/{doc.document_id}/notes/{note_id}", headers=auth_headers
-    )
+    deleted = client.delete(f"/documents/{doc.document_id}/notes/{note_id}", headers=auth_headers)
     assert deleted.status_code == 204
 
 

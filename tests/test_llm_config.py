@@ -93,9 +93,7 @@ def test_step_active_inherits_connection_settings() -> None:
     config = LlmConfig(
         provider="ollama",
         providers={"ollama": LlmProviderSettings(model="base", base_url="http://x:11434")},
-        steps=PipelineStepsConfig(
-            folder_placement=PipelineStepModelConfig(model="big-model")
-        ),
+        steps=PipelineStepsConfig(folder_placement=PipelineStepModelConfig(model="big-model")),
     )
     step = config.step_active("folder_placement")
     assert step.model == "big-model"
@@ -131,9 +129,7 @@ def test_step_fallback_step_override_wins_over_global() -> None:
         provider="ollama",
         providers={"ollama": LlmProviderSettings(model="llama3.1:8b")},
         fallback_model="global-fallback",
-        steps=PipelineStepsConfig(
-            doc_type=PipelineStepModelConfig(fallback_model="step-fallback")
-        ),
+        steps=PipelineStepsConfig(doc_type=PipelineStepModelConfig(fallback_model="step-fallback")),
     )
     assert config.step_fallback("doc_type").model == "step-fallback"  # type: ignore[union-attr]
     assert config.step_fallback("summary").model == "global-fallback"  # type: ignore[union-attr]
@@ -159,9 +155,7 @@ def test_step_active_empty_string_treated_as_no_override() -> None:
     config = LlmConfig(
         provider="ollama",
         providers={"ollama": LlmProviderSettings(model="llama3.1:8b")},
-        steps=PipelineStepsConfig(
-            value_extraction=PipelineStepModelConfig(model="")
-        ),
+        steps=PipelineStepsConfig(value_extraction=PipelineStepModelConfig(model="")),
     )
     assert config.step_active("value_extraction").model == "llama3.1:8b"
 

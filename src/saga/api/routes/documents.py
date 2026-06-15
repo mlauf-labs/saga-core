@@ -210,9 +210,7 @@ async def delete_document(services: ServicesDep, document_id: str) -> None:
 # --------------------------------------------------------------------------- #
 
 
-@router.get(
-    "/{document_id}/notes", response_model=list[Note], summary="List a document's notes"
-)
+@router.get("/{document_id}/notes", response_model=list[Note], summary="List a document's notes")
 async def list_document_notes(services: ServicesDep, document_id: str) -> list[Note]:
     document = await service.get_document(services, document_id)
     return document.notes
@@ -224,9 +222,7 @@ async def list_document_notes(services: ServicesDep, document_id: str) -> list[N
     response_model=Note,
     summary="Add a note to a document",
 )
-async def add_document_note(
-    services: ServicesDep, document_id: str, body: NoteCreate
-) -> Note:
+async def add_document_note(services: ServicesDep, document_id: str, body: NoteCreate) -> Note:
     return await service.add_document_note(services, document_id, body.content)
 
 
@@ -258,9 +254,7 @@ async def delete_document_note(services: ServicesDep, document_id: str, note_id:
     response_model=MembershipResponse,
     summary="List the folders a document belongs to",
 )
-async def list_document_folders(
-    services: ServicesDep, document_id: str
-) -> MembershipResponse:
+async def list_document_folders(services: ServicesDep, document_id: str) -> MembershipResponse:
     document = await service.get_document(services, document_id)
     return MembershipResponse(folders=document.folders)
 

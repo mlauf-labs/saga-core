@@ -12,6 +12,9 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, BeforeValidator, Field
 
+from saga.core.config import load_yaml
+from saga.core.errors import ConfigError
+
 
 def _empty_str_to_none(v: Any) -> Any:  # noqa: ANN401
     """Coerce an empty / whitespace-only string to None (for env-var placeholders)."""
@@ -22,8 +25,6 @@ def _empty_str_to_none(v: Any) -> Any:  # noqa: ANN401
 
 _OptionalInt = Annotated[int | None, BeforeValidator(_empty_str_to_none)]
 
-from saga.core.config import load_yaml
-from saga.core.errors import ConfigError
 
 #: Names of the four LLM-driven pipeline steps that support per-step model overrides.
 PIPELINE_STEPS = ("doc_type", "value_extraction", "summary", "folder_placement")
@@ -93,13 +94,9 @@ class PipelineStepsConfig(BaseModel):
     """
 
     doc_type: PipelineStepModelConfig = Field(default_factory=PipelineStepModelConfig)
-    value_extraction: PipelineStepModelConfig = Field(
-        default_factory=PipelineStepModelConfig
-    )
+    value_extraction: PipelineStepModelConfig = Field(default_factory=PipelineStepModelConfig)
     summary: PipelineStepModelConfig = Field(default_factory=PipelineStepModelConfig)
-    folder_placement: PipelineStepModelConfig = Field(
-        default_factory=PipelineStepModelConfig
-    )
+    folder_placement: PipelineStepModelConfig = Field(default_factory=PipelineStepModelConfig)
 
 
 class LlmConfig(BaseModel):
@@ -145,9 +142,7 @@ class LlmConfig(BaseModel):
         the step has an explicit ``model`` configured; otherwise returns :attr:`active`
         unchanged.
         """
-        step_cfg: PipelineStepModelConfig = getattr(
-            self.steps, step, PipelineStepModelConfig()
-        )
+        step_cfg: PipelineStepModelConfig = getattr(self.steps, step, PipelineStepModelConfig())
         if step_cfg.model:
             return self.active.model_copy(update={"model": step_cfg.model})
         return self.active
@@ -159,18 +154,14 @@ class LlmConfig(BaseModel):
         ``fallback_model`` configured; otherwise falls back to the global
         :attr:`fallback` (which may itself be ``None``).
         """
-        step_cfg: PipelineStepModelConfig = getattr(
-            self.steps, step, PipelineStepModelConfig()
-        )
+        step_cfg: PipelineStepModelConfig = getattr(self.steps, step, PipelineStepModelConfig())
         if step_cfg.fallback_model:
             return self.active.model_copy(update={"model": step_cfg.fallback_model})
         return self.fallback
 
     def has_step_model_override(self, step: str) -> bool:
         """Return ``True`` when the step has any model or fallback_model override."""
-        step_cfg: PipelineStepModelConfig = getattr(
-            self.steps, step, PipelineStepModelConfig()
-        )
+        step_cfg: PipelineStepModelConfig = getattr(self.steps, step, PipelineStepModelConfig())
         return bool(step_cfg.model) or bool(step_cfg.fallback_model)
 
 

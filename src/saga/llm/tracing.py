@@ -155,7 +155,7 @@ class _LangfuseTracer(_BaseTracer):
     The context manager *cm* is already entered; ``finish()`` exits it.
     """
 
-    def __init__(self, lf: Any, cm: Any) -> None:
+    def __init__(self, lf: Any, cm: Any) -> None:  # noqa: ANN401
         self._lf = lf
         self._cm = cm
         self._finished = False

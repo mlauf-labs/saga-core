@@ -40,9 +40,7 @@ async def test_document_search_by_query(
     client: TestClient, auth_headers: dict[str, str], db: PostgresStore
 ) -> None:
     doc = await seed_document(db, title="Invoice 2026.pdf", content="annual liability premium")
-    response = client.post(
-        "/documents/search", json={"query": "liability"}, headers=auth_headers
-    )
+    response = client.post("/documents/search", json={"query": "liability"}, headers=auth_headers)
     assert response.status_code == 200
     body = response.json()
     assert body["total"] == 1
@@ -106,12 +104,8 @@ async def test_patch_document_empty_rejected(
     assert response.json()["code"] == "validation_error"
 
 
-def test_patch_document_missing_404(
-    client: TestClient, auth_headers: dict[str, str]
-) -> None:
-    response = client.patch(
-        "/documents/nope", json={"summary": "x"}, headers=auth_headers
-    )
+def test_patch_document_missing_404(client: TestClient, auth_headers: dict[str, str]) -> None:
+    response = client.patch("/documents/nope", json={"summary": "x"}, headers=auth_headers)
     assert response.status_code == 404
 
 

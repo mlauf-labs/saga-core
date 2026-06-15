@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
-from saga.core.errors import SagaError, NotFoundError
+from saga.core.errors import NotFoundError, SagaError
 from saga.core.logging import bind_correlation_id, get_logger
 from saga.core.models import DocumentStatus
 from saga.llm.tracing import build_pipeline_tracer, noop_tracer

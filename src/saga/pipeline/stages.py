@@ -251,9 +251,7 @@ async def place_in_folder(
     # the model failed all retries). This path has the ancestor-assignment bug
     # but is better than leaving the document unplaced.
     if not assignments:
-        _log.warning(
-            "placement_agentic_failed_using_legacy_fallback", document_id=document_id
-        )
+        _log.warning("placement_agentic_failed_using_legacy_fallback", document_id=document_id)
         placement = await analyzer.place_in_folder(
             summary=summary,
             doc_type=doc_type or "unknown",
@@ -267,13 +265,9 @@ async def place_in_folder(
         if placement is not None:
             assignments = [fid for fid in placement.assignments if fid in valid_ids_legacy]
             if allow_auto_create:
-                created = await _create_new_folders(
-                    placement.new_folders, valid_ids_legacy, db
-                )
+                created = await _create_new_folders(placement.new_folders, valid_ids_legacy, db)
                 primary_new = (
-                    placement.new_folder_primary.strip()
-                    if placement.new_folder_primary
-                    else None
+                    placement.new_folder_primary.strip() if placement.new_folder_primary else None
                 )
                 for name, fid in created.items():
                     if name == primary_new:

@@ -319,9 +319,7 @@ def build_summary_knn_body(
     """Build a kNN query over document ``summary_embedding`` for similarity (FR-16)."""
     knn: dict[str, Any] = {"vector": query_vector, "k": top_k}
     if exclude_document_id is not None:
-        knn["filter"] = {
-            "bool": {"must_not": [{"term": {"document_id": exclude_document_id}}]}
-        }
+        knn["filter"] = {"bool": {"must_not": [{"term": {"document_id": exclude_document_id}}]}}
     return {
         "size": top_k,
         "query": {"knn": {"summary_embedding": knn}},

@@ -212,9 +212,7 @@ async def test_document_note_lifecycle(services: Services) -> None:
 async def test_hybrid_search_returns_fused_results(services: Services) -> None:
     doc = await _seed_document(services, title="invoice.pdf", content="annual invoice total")
     mcp = build_server(services.config, services)
-    result = _structured(
-        await mcp.call_tool("hybrid_search", {"keyword_query": "invoice"})
-    )
+    result = _structured(await mcp.call_tool("hybrid_search", {"keyword_query": "invoice"}))
     assert "results" in result
     assert result["results"][0]["document_id"] == doc.document_id
 
@@ -271,7 +269,7 @@ class _FakeAnalyzer:
         for key, result in self.responses.items():
             if key in content:
                 return result
-        return {k: None for k in fields}
+        return dict.fromkeys(fields)
 
 
 async def test_analyze_documents_table_tool_registered_with_analyzer(
@@ -330,9 +328,7 @@ async def test_analyze_documents_table_missing_fields_calls_llm_and_persists(
 ) -> None:
     """Missing fields trigger an LLM call; results are merged into extracted_values."""
     db = cast(PostgresStore, services.db)
-    doc = await _seed_document(
-        services, title="contract.pdf", content="Contract signed 2026-01-15"
-    )
+    doc = await _seed_document(services, title="contract.pdf", content="Contract signed 2026-01-15")
     # Only invoice_number is pre-stored; total_amount is missing.
     await db.update_document(
         doc.document_id,
@@ -341,9 +337,7 @@ async def test_analyze_documents_table_missing_fields_calls_llm_and_persists(
         ],
     )
 
-    analyzer = _FakeAnalyzer(
-        responses={"Contract signed": {"total_amount": "500 EUR"}}
-    )
+    analyzer = _FakeAnalyzer(responses={"Contract signed": {"total_amount": "500 EUR"}})
     mcp = build_server(services.config, services, analyzer=analyzer)
     result = _structured(
         await mcp.call_tool(
@@ -420,9 +414,7 @@ async def test_analyze_documents_table_folder_with_per_folder_recursive(
     db = cast(PostgresStore, services.db)
 
     parent = _structured(
-        await build_server(services.config, services).call_tool(
-            "create_folder", {"name": "Parent"}
-        )
+        await build_server(services.config, services).call_tool("create_folder", {"name": "Parent"})
     )
     child = _structured(
         await build_server(services.config, services).call_tool(
@@ -490,5 +482,3 @@ async def test_analyze_documents_table_validation_errors(services: Services) -> 
         )
     )
     assert "error" in result_too_many
-
-

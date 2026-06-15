@@ -26,9 +26,7 @@ async def test_search_semantic_returns_results(
     client: TestClient, auth_headers: dict[str, str], db: PostgresStore
 ) -> None:
     doc = await seed_document(db, title="invoice.pdf", content="how much is the invoice")
-    response = client.post(
-        "/search", json={"semantic_query": "invoice"}, headers=auth_headers
-    )
+    response = client.post("/search", json={"semantic_query": "invoice"}, headers=auth_headers)
     assert response.status_code == 200
     body = response.json()
     assert body["results"][0]["document_id"] == doc.document_id

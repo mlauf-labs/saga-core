@@ -84,9 +84,7 @@ def _clamped_extensions(request: httpx.Request, connect_timeout: float) -> dict[
     return extensions
 
 
-def _reroute(
-    request: httpx.Request, server_url: str, extensions: dict[str, Any]
-) -> httpx.Request:
+def _reroute(request: httpx.Request, server_url: str, extensions: dict[str, Any]) -> httpx.Request:
     """Copy of ``request`` pointed at ``server_url`` (path/query untouched)."""
     target = httpx.URL(server_url)
     new_url = request.url.copy_with(scheme=target.scheme, host=target.host, port=target.port)

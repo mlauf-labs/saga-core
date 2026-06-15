@@ -72,9 +72,7 @@ async def _noop() -> None:
     return None
 
 
-def _patch_ollama(
-    monkeypatch: pytest.MonkeyPatch, clients: dict[str, _FakeClient]
-) -> None:
+def _patch_ollama(monkeypatch: pytest.MonkeyPatch, clients: dict[str, _FakeClient]) -> None:
     module = SimpleNamespace(
         AsyncClient=lambda host, timeout=None: clients[host],
         ResponseError=_FakeResponseError,

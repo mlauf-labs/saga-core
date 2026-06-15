@@ -41,7 +41,7 @@ class FolderSelection(BaseModel):
 def build_analyze_documents_table_tool(
     services: Services,
     analyzer: DocumentAnalyzer,
-) -> Any:
+) -> Any:  # noqa: ANN401
     """Return the ``analyze_documents_table`` async tool function.
 
     Closes over *services* and *analyzer* so the tool can access storage and
@@ -89,9 +89,7 @@ def build_analyze_documents_table_tool(
         """
         # ── Input validation ────────────────────────────────────────────────
         if not document_ids and not folders:
-            return {
-                "error": "At least one of 'document_ids' or 'folders' must be provided."
-            }
+            return {"error": "At least one of 'document_ids' or 'folders' must be provided."}
 
         if not fields:
             return {"error": "'fields' must contain at least one entry."}
@@ -99,8 +97,7 @@ def build_analyze_documents_table_tool(
         if len(fields) > _MAX_FIELDS:
             return {
                 "error": (
-                    f"'fields' accepts at most {_MAX_FIELDS} entries; "
-                    f"{len(fields)} were provided."
+                    f"'fields' accepts at most {_MAX_FIELDS} entries; {len(fields)} were provided."
                 )
             }
 
@@ -201,7 +198,7 @@ def build_analyze_documents_table_tool(
                             document_id=doc.document_id,
                             new_fields=len(new_evs),
                         )
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         _log.warning(
                             "analyze_table_persist_failed",
                             document_id=doc.document_id,

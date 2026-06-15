@@ -24,9 +24,9 @@ _CONVERT_ASYNC_PATH = "/v1/convert/file/async"
 _POLL_PATH = "/v1/status/poll/{task_id}"
 _RESULT_PATH = "/v1/result/{task_id}"
 
-_POLL_WAIT_SECONDS = 5      # server-side long-poll hint (only effective for pending→started)
+_POLL_WAIT_SECONDS = 5  # server-side long-poll hint (only effective for pending→started)
 _POLL_INTERVAL_SECONDS = 5  # client-side sleep between polls
-_POLL_MAX_ATTEMPTS = 300    # 300 × 5 s = up to 25 minutes (covers the 20-min VLM timeout)
+_POLL_MAX_ATTEMPTS = 300  # 300 x 5 s = up to 25 minutes (covers the 20-min VLM timeout)
 
 
 class DoclingConverter(HttpConverter):
@@ -45,9 +45,9 @@ class DoclingConverter(HttpConverter):
 
         Three modes are supported (set via ``vlm.mode`` in converters.yaml):
 
-        * ``api``    – External OpenAI-compatible endpoint (Ollama, vLLM, …).
-        * ``preset`` – Built-in docling-serve preset (model inside container).
-        * ``local``  – HuggingFace model loaded inline in the container (CPU/GPU).
+        * ``api``    - External OpenAI-compatible endpoint (Ollama, vLLM, …).
+        * ``preset`` - Built-in docling-serve preset (model inside container).
+        * ``local``  - HuggingFace model loaded inline in the container (CPU/GPU).
         """
         import json as _json
 
@@ -65,32 +65,36 @@ class DoclingConverter(HttpConverter):
             return base
 
         if mode == "local":
-            base["vlm_pipeline_model_local"] = _json.dumps({
-                "repo_id": vlm.repo_id,  # type: ignore[attr-defined]
-                "inference_framework": vlm.inference_framework,  # type: ignore[attr-defined]
-                "transformers_model_type": vlm.transformers_model_type,  # type: ignore[attr-defined]
-                "max_new_tokens": vlm.max_new_tokens,  # type: ignore[attr-defined]
-                "load_in_8bit": vlm.load_in_8bit,  # type: ignore[attr-defined]
-                "prompt": vlm.prompt,  # type: ignore[attr-defined]
-                "response_format": vlm.response_format,  # type: ignore[attr-defined]
-                "scale": vlm.scale,  # type: ignore[attr-defined]
-                "temperature": vlm.temperature,  # type: ignore[attr-defined]
-                "extra_generation_config": {"skip_special_tokens": False},
-            })
+            base["vlm_pipeline_model_local"] = _json.dumps(
+                {
+                    "repo_id": vlm.repo_id,  # type: ignore[attr-defined]
+                    "inference_framework": vlm.inference_framework,  # type: ignore[attr-defined]
+                    "transformers_model_type": vlm.transformers_model_type,  # type: ignore[attr-defined]
+                    "max_new_tokens": vlm.max_new_tokens,  # type: ignore[attr-defined]
+                    "load_in_8bit": vlm.load_in_8bit,  # type: ignore[attr-defined]
+                    "prompt": vlm.prompt,  # type: ignore[attr-defined]
+                    "response_format": vlm.response_format,  # type: ignore[attr-defined]
+                    "scale": vlm.scale,  # type: ignore[attr-defined]
+                    "temperature": vlm.temperature,  # type: ignore[attr-defined]
+                    "extra_generation_config": {"skip_special_tokens": False},
+                }
+            )
             return base
 
         # mode == "api" (default)
-        base["vlm_pipeline_model_api"] = _json.dumps({
-            "url": vlm.api_url,  # type: ignore[attr-defined]
-            "headers": {},
-            "params": {"model": vlm.model},  # type: ignore[attr-defined]
-            "timeout": vlm.timeout,  # type: ignore[attr-defined]
-            "concurrency": vlm.concurrency,  # type: ignore[attr-defined]
-            "prompt": vlm.prompt,  # type: ignore[attr-defined]
-            "scale": vlm.scale,  # type: ignore[attr-defined]
-            "response_format": vlm.response_format,  # type: ignore[attr-defined]
-            "temperature": vlm.temperature,  # type: ignore[attr-defined]
-        })
+        base["vlm_pipeline_model_api"] = _json.dumps(
+            {
+                "url": vlm.api_url,  # type: ignore[attr-defined]
+                "headers": {},
+                "params": {"model": vlm.model},  # type: ignore[attr-defined]
+                "timeout": vlm.timeout,  # type: ignore[attr-defined]
+                "concurrency": vlm.concurrency,  # type: ignore[attr-defined]
+                "prompt": vlm.prompt,  # type: ignore[attr-defined]
+                "scale": vlm.scale,  # type: ignore[attr-defined]
+                "response_format": vlm.response_format,  # type: ignore[attr-defined]
+                "temperature": vlm.temperature,  # type: ignore[attr-defined]
+            }
+        )
         return base
 
     def _ocr_form_fields(self) -> dict[str, str | list[str]]:
@@ -139,7 +143,7 @@ class DoclingConverter(HttpConverter):
         return self._extract_markdown(response.json(), filename)
 
     # ------------------------------------------------------------------
-    # Async path (VLM pipeline — can take minutes per page)
+    # Async path (VLM pipeline - can take minutes per page)
     # ------------------------------------------------------------------
 
     async def _convert_async(self, *, data: bytes, filename: str, mime_type: str) -> str:
@@ -186,7 +190,7 @@ class DoclingConverter(HttpConverter):
 
         for attempt in range(_POLL_MAX_ATTEMPTS):
             if attempt > 0:
-                # Real sleep between polls — the server-side `wait` param only gates
+                # Real sleep between polls - the server-side `wait` param only gates
                 # the pending→started transition, not the started→success transition.
                 await asyncio.sleep(_POLL_INTERVAL_SECONDS)
             poll_response = await self.client.get(
@@ -219,10 +223,8 @@ class DoclingConverter(HttpConverter):
                     or meta.get("errors")
                     or [poll_response.text[:300]]
                 )
-                raise ConversionError(
-                    f"docling VLM: task {task_id} failed: {errors}"
-                )
-            # Still pending/running — continue polling.
+                raise ConversionError(f"docling VLM: task {task_id} failed: {errors}")
+            # Still pending/running - continue polling.
         else:
             raise ConversionError(
                 f"docling VLM: task {task_id} did not complete within "

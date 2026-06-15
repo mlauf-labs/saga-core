@@ -316,8 +316,7 @@ class DocumentAnalyzer:
     ) -> FolderPlacement | None:
         """Choose 1..n folders (and optionally new ones) for the document (FR-16)."""
         creation_rule = (
-            "If no existing folder fits well, you MAY propose new folders in "
-            "'new_folders'."
+            "If no existing folder fits well, you MAY propose new folders in 'new_folders'."
             if allow_auto_create
             else "Do NOT create new folders; choose only from the existing folder ids."
         )
@@ -458,8 +457,7 @@ class DocumentAnalyzer:
             table row.
         """
         field_definitions: dict[str, Any] = {
-            key: (str | None, Field(default=None, description=desc))
-            for key, desc in fields.items()
+            key: (str | None, Field(default=None, description=desc)) for key, desc in fields.items()
         }
         DynamicSchema = create_model("FieldExtractionResult", **field_definitions)
 

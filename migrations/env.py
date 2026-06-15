@@ -30,7 +30,11 @@ def _database_url() -> str:
         return load_config().postgres.dsn
     except Exception as exc:  # pragma: no cover - fallback to ini value
         import sys
-        print(f"WARNING: load_config() failed, falling back to alembic.ini URL: {exc}", file=sys.stderr)
+
+        print(
+            f"WARNING: load_config() failed, falling back to alembic.ini URL: {exc}",
+            file=sys.stderr,
+        )
         return config.get_main_option("sqlalchemy.url", "")
 
 
@@ -56,9 +60,7 @@ async def run_migrations_online() -> None:
     """Run migrations in 'online' mode against the async engine."""
     configuration = config.get_section(config.config_ini_section, {})
     configuration["sqlalchemy.url"] = _database_url()
-    connectable = async_engine_from_config(
-        configuration, prefix="sqlalchemy.", poolclass=NullPool
-    )
+    connectable = async_engine_from_config(configuration, prefix="sqlalchemy.", poolclass=NullPool)
     async with connectable.connect() as connection:
         await connection.run_sync(_do_run_migrations)
     await connectable.dispose()

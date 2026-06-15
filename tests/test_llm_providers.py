@@ -171,10 +171,7 @@ def test_primary_and_fallback_share_one_pool(monkeypatch: pytest.MonkeyPatch) ->
     primary = build_chat_model(cfg)
     fallback = build_fallback_chat_model(cfg)
     assert fallback is not None
-    assert (
-        primary.http_async_client._transport._pool
-        is fallback.http_async_client._transport._pool
-    )
+    assert primary.http_async_client._transport._pool is fallback.http_async_client._transport._pool
 
 
 def test_multi_server_not_applied_to_openai(monkeypatch: pytest.MonkeyPatch) -> None:
