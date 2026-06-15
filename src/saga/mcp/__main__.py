@@ -62,7 +62,9 @@ def _build_analyzer(config: object) -> DocumentAnalyzer | None:
             output_language=app_config.generation.language if app_config else "English",
             store_description=app_config.generation.description if app_config else "",
             custom_doctype_instructions=app_config.generation.prompt_doctype if app_config else "",
-            custom_metadata_instructions=app_config.generation.prompt_metadata if app_config else "",
+            custom_metadata_instructions=app_config.generation.prompt_metadata
+            if app_config
+            else "",
             custom_summary_instructions=app_config.generation.prompt_summary if app_config else "",
             custom_folder_instructions=app_config.generation.prompt_folder if app_config else "",
         )

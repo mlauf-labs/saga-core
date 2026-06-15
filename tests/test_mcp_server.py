@@ -15,8 +15,15 @@ import pytest
 
 from saga.api.dependencies import Services
 from saga.core.models import Document, DocumentStatus, ExtractedValue
+from saga.llm.analyzer import DocumentAnalyzer
 from saga.mcp.server import build_server
 from saga.storage.postgres import PostgresStore
+
+
+def _as_analyzer(fake: object) -> DocumentAnalyzer:
+    """Cast a duck-typed fake to the analyzer type (tests only)."""
+    return cast(DocumentAnalyzer, fake)
+
 
 # FastMCP's ``call_tool`` returns ``(unstructured_content, structured_content)`` when the
 # tool declares a structured output schema. Tools returning a plain ``dict`` expose that
@@ -212,9 +219,7 @@ async def test_document_note_lifecycle(services: Services) -> None:
 async def test_hybrid_search_returns_fused_results(services: Services) -> None:
     doc = await _seed_document(services, title="invoice.pdf", content="annual invoice total")
     mcp = build_server(services.config, services)
-    result = _structured(
-        await mcp.call_tool("hybrid_search", {"keyword_query": "invoice"})
-    )
+    result = _structured(await mcp.call_tool("hybrid_search", {"keyword_query": "invoice"}))
     assert "results" in result
     assert result["results"][0]["document_id"] == doc.document_id
 
@@ -271,14 +276,14 @@ class _FakeAnalyzer:
         for key, result in self.responses.items():
             if key in content:
                 return result
-        return {k: None for k in fields}
+        return dict.fromkeys(fields)
 
 
 async def test_analyze_documents_table_tool_registered_with_analyzer(
     services: Services,
 ) -> None:
     """analyze_documents_table appears when an analyzer is passed."""
-    mcp_with = build_server(services.config, services, analyzer=_FakeAnalyzer())
+    mcp_with = build_server(services.config, services, analyzer=_as_analyzer(_FakeAnalyzer()))
     names_with = {t.name for t in await mcp_with.list_tools()}
     assert "analyze_documents_table" in names_with
 
@@ -302,7 +307,7 @@ async def test_analyze_documents_table_all_from_metadata_skips_llm(
     )
 
     analyzer = _FakeAnalyzer()
-    mcp = build_server(services.config, services, analyzer=analyzer)
+    mcp = build_server(services.config, services, analyzer=_as_analyzer(analyzer))
     result = _structured(
         await mcp.call_tool(
             "analyze_documents_table",
@@ -330,9 +335,7 @@ async def test_analyze_documents_table_missing_fields_calls_llm_and_persists(
 ) -> None:
     """Missing fields trigger an LLM call; results are merged into extracted_values."""
     db = cast(PostgresStore, services.db)
-    doc = await _seed_document(
-        services, title="contract.pdf", content="Contract signed 2026-01-15"
-    )
+    doc = await _seed_document(services, title="contract.pdf", content="Contract signed 2026-01-15")
     # Only invoice_number is pre-stored; total_amount is missing.
     await db.update_document(
         doc.document_id,
@@ -341,10 +344,8 @@ async def test_analyze_documents_table_missing_fields_calls_llm_and_persists(
         ],
     )
 
-    analyzer = _FakeAnalyzer(
-        responses={"Contract signed": {"total_amount": "500 EUR"}}
-    )
-    mcp = build_server(services.config, services, analyzer=analyzer)
+    analyzer = _FakeAnalyzer(responses={"Contract signed": {"total_amount": "500 EUR"}})
+    mcp = build_server(services.config, services, analyzer=_as_analyzer(analyzer))
     result = _structured(
         await mcp.call_tool(
             "analyze_documents_table",
@@ -397,7 +398,7 @@ async def test_analyze_documents_table_no_content_skipped(services: Services) ->
     # Deliberately do NOT call db.update_content → content_markdown remains None.
 
     analyzer = _FakeAnalyzer()
-    mcp = build_server(services.config, services, analyzer=analyzer)
+    mcp = build_server(services.config, services, analyzer=_as_analyzer(analyzer))
     result = _structured(
         await mcp.call_tool(
             "analyze_documents_table",
@@ -420,9 +421,7 @@ async def test_analyze_documents_table_folder_with_per_folder_recursive(
     db = cast(PostgresStore, services.db)
 
     parent = _structured(
-        await build_server(services.config, services).call_tool(
-            "create_folder", {"name": "Parent"}
-        )
+        await build_server(services.config, services).call_tool("create_folder", {"name": "Parent"})
     )
     child = _structured(
         await build_server(services.config, services).call_tool(
@@ -437,7 +436,7 @@ async def test_analyze_documents_table_folder_with_per_folder_recursive(
     await db.add_document_folder(doc_child.document_id, child["folder_id"])
 
     analyzer = _FakeAnalyzer()
-    mcp = build_server(services.config, services, analyzer=analyzer)
+    mcp = build_server(services.config, services, analyzer=_as_analyzer(analyzer))
 
     # non-recursive: only parent doc
     result_flat = _structured(
@@ -470,7 +469,7 @@ async def test_analyze_documents_table_folder_with_per_folder_recursive(
 
 async def test_analyze_documents_table_validation_errors(services: Services) -> None:
     """Invalid inputs return descriptive error payloads without raising."""
-    mcp = build_server(services.config, services, analyzer=_FakeAnalyzer())
+    mcp = build_server(services.config, services, analyzer=_as_analyzer(_FakeAnalyzer()))
 
     # No document selection at all.
     result_no_sel = _structured(
@@ -490,5 +489,3 @@ async def test_analyze_documents_table_validation_errors(services: Services) -> 
         )
     )
     assert "error" in result_too_many
-
-

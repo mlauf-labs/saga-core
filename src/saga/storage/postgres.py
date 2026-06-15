@@ -260,7 +260,9 @@ class PostgresStore:
             ).scalar_one_or_none()
             return _to_doctype(row, 0) if row is not None else None
 
-    async def create_doc_type(self, *, name: str, description: str | None = None, emoji: str | None = None) -> DocType:
+    async def create_doc_type(
+        self, *, name: str, description: str | None = None, emoji: str | None = None
+    ) -> DocType:
         name = name.strip()
         if not name:
             raise ValidationError("A doc-type name must not be empty.")
@@ -275,7 +277,9 @@ class PostgresStore:
             await session.flush()
             return _to_doctype(row, 0)
 
-    async def ensure_doc_type(self, *, name: str, description: str | None = None, emoji: str | None = None) -> DocType:
+    async def ensure_doc_type(
+        self, *, name: str, description: str | None = None, emoji: str | None = None
+    ) -> DocType:
         """Return the doc-type with ``name``, creating it (with description) if new."""
         name = name.strip()
         if not name:
@@ -294,7 +298,12 @@ class PostgresStore:
             return _to_doctype(row, 0)
 
     async def update_doc_type(
-        self, doc_type_id: str, *, name: str | None = None, description: str | None = None, emoji: str | None = None
+        self,
+        doc_type_id: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        emoji: str | None = None,
     ) -> DocType:
         async with self._sessions()() as session, session.begin():
             row = await session.get(DocTypeRow, doc_type_id)
@@ -379,9 +388,7 @@ class PostgresStore:
     async def folder_path(self, folder_id: str) -> list[str]:
         """Return folder names from the root down to ``folder_id`` (backup layout)."""
         async with self._sessions()() as session:
-            rows = await session.execute(
-                select(FolderRow.id, FolderRow.name, FolderRow.parent_id)
-            )
+            rows = await session.execute(select(FolderRow.id, FolderRow.name, FolderRow.parent_id))
             info = {str(fid): (name, parent) for fid, name, parent in rows.all()}
         names: list[str] = []
         current: str | None = folder_id
@@ -569,9 +576,7 @@ class PostgresStore:
 
     async def _direct_folder_counts(self, session: AsyncSession) -> dict[str, int]:
         rows = await session.execute(
-            select(DocumentFolderRow.folder_id, func.count()).group_by(
-                DocumentFolderRow.folder_id
-            )
+            select(DocumentFolderRow.folder_id, func.count()).group_by(DocumentFolderRow.folder_id)
         )
         return {str(fid): int(count) for fid, count in rows.all()}
 
@@ -659,9 +664,7 @@ class PostgresStore:
                 return None
             return await self._load_document(session, row)
 
-    async def list_documents(
-        self, *, page: int, page_size: int
-    ) -> tuple[list[Document], int]:
+    async def list_documents(self, *, page: int, page_size: int) -> tuple[list[Document], int]:
         async with self._sessions()() as session:
             total = int(
                 (await session.execute(select(func.count()).select_from(DocumentRow))).scalar_one()
@@ -788,9 +791,7 @@ class PostgresStore:
             base = select(DocumentRow).where(DocumentRow.doc_type_id == doc_type_id)
             total = int(
                 (
-                    await session.execute(
-                        select(func.count()).select_from(base.subquery())
-                    )
+                    await session.execute(select(func.count()).select_from(base.subquery()))
                 ).scalar_one()
             )
             rows = list(
@@ -823,9 +824,7 @@ class PostgresStore:
             )
             total = int(
                 (
-                    await session.execute(
-                        select(func.count()).select_from(doc_ids_stmt.subquery())
-                    )
+                    await session.execute(select(func.count()).select_from(doc_ids_stmt.subquery()))
                 ).scalar_one()
             )
             rows = list(
@@ -895,8 +894,8 @@ class PostgresStore:
             await session.execute(
                 delete(DocumentFolderRow).where(DocumentFolderRow.document_id == document_id)
             )
-            chosen_primary = primary_id if primary_id in unique_ids else (
-                unique_ids[0] if unique_ids else None
+            chosen_primary = (
+                primary_id if primary_id in unique_ids else (unique_ids[0] if unique_ids else None)
             )
             for fid in unique_ids:
                 session.add(
@@ -939,9 +938,7 @@ class PostgresStore:
             await self._ensure_primary_for(session, [document_id])
             return await self._document_folders(session, document_id)
 
-    async def remove_document_folder(
-        self, document_id: str, folder_id: str
-    ) -> list[FolderRef]:
+    async def remove_document_folder(self, document_id: str, folder_id: str) -> list[FolderRef]:
         async with self._sessions()() as session, session.begin():
             row = await session.get(DocumentFolderRow, (document_id, folder_id))
             if row is None:
@@ -967,9 +964,7 @@ class PostgresStore:
 
     # ----------------------------- internals ------------------------------- #
 
-    async def _document_folders(
-        self, session: AsyncSession, document_id: str
-    ) -> list[FolderRef]:
+    async def _document_folders(self, session: AsyncSession, document_id: str) -> list[FolderRef]:
         rows = await session.execute(
             select(DocumentFolderRow, FolderRow.name, FolderRow.emoji)
             .join(FolderRow, FolderRow.id == DocumentFolderRow.folder_id)
@@ -990,9 +985,7 @@ class PostgresStore:
         for link in links:
             link.is_primary = False
 
-    async def _ensure_primary_for(
-        self, session: AsyncSession, document_ids: Sequence[str]
-    ) -> None:
+    async def _ensure_primary_for(self, session: AsyncSession, document_ids: Sequence[str]) -> None:
         """Make sure each document with memberships has exactly one primary folder."""
         for document_id in document_ids:
             links = list(

@@ -108,7 +108,7 @@ class OllamaEmbeddings:
                 continue
             self._pool.mark_success(url)
             lease.release()
-            return response.embeddings
+            return [list(vector) for vector in response.embeddings]
 
     async def aclose(self) -> None:
         import contextlib

@@ -113,9 +113,7 @@ class OpenSearchStore:
                 return
             missing = await self._incompatible_knn_fields(name, knn_fields)
             if missing:
-                _log.warning(
-                    "index_mapping_incompatible_recreating", index=name, fields=missing
-                )
+                _log.warning("index_mapping_incompatible_recreating", index=name, fields=missing)
                 await self.client.indices.delete(index=name)
                 await self.client.indices.create(index=name, body=body)
                 _log.info("index_recreated", index=name)
@@ -129,13 +127,9 @@ class OpenSearchStore:
         if not knn_fields:
             return []
         mapping = await self.client.indices.get_mapping(index=name)
-        properties: dict[str, Any] = (
-            mapping.get(name, {}).get("mappings", {}).get("properties", {})
-        )
+        properties: dict[str, Any] = mapping.get(name, {}).get("mappings", {}).get("properties", {})
         return [
-            field
-            for field in knn_fields
-            if properties.get(field, {}).get("type") != "knn_vector"
+            field for field in knn_fields if properties.get(field, {}).get("type") != "knn_vector"
         ]
 
     async def project_document(

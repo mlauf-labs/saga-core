@@ -61,9 +61,7 @@ def _multi_server_clients(settings: LlmProviderSettings) -> dict[str, Any]:
     pool = get_pool(servers, cooldown_seconds=runtime.cooldown_seconds)
     return {
         "http_async_client": httpx.AsyncClient(
-            transport=OllamaFailoverAsyncTransport(
-                pool, connect_timeout=runtime.connect_timeout
-            )
+            transport=OllamaFailoverAsyncTransport(pool, connect_timeout=runtime.connect_timeout)
         ),
         "http_client": httpx.Client(
             transport=OllamaFailoverTransport(pool, connect_timeout=runtime.connect_timeout)

@@ -62,9 +62,7 @@ async def get_folder(services: ServicesDep, folder_id: str) -> Folder:
     response_model=Folder,
     summary="Update a folder (rename, move, describe, metadata)",
 )
-async def update_folder(
-    services: ServicesDep, folder_id: str, body: FolderUpdate
-) -> Folder:
+async def update_folder(services: ServicesDep, folder_id: str, body: FolderUpdate) -> Folder:
     fields = body.model_dump(exclude_unset=True)
     return await service.update_folder(services, folder_id, fields=fields)
 
@@ -131,9 +129,7 @@ async def add_folder_note(services: ServicesDep, folder_id: str, body: NoteCreat
     return await service.add_folder_note(services, folder_id, body.content)
 
 
-@router.patch(
-    "/{folder_id}/notes/{note_id}", response_model=Note, summary="Update a folder note"
-)
+@router.patch("/{folder_id}/notes/{note_id}", response_model=Note, summary="Update a folder note")
 async def update_folder_note(
     services: ServicesDep, folder_id: str, note_id: str, body: NoteUpdate
 ) -> Note:

@@ -69,8 +69,7 @@ class CreateFolderArgs(BaseModel):
     name: str = Field(
         description=(
             "Short, human-readable folder name, e.g. 'Invoices' or '2026'. "
-            "Must be unique under the given parent. "
-            + _FOLDER_NAME_CONSTRAINT
+            "Must be unique under the given parent. " + _FOLDER_NAME_CONSTRAINT
         )
     )
     parent_id: str | None = Field(

@@ -190,9 +190,7 @@ async def reanalyze_document(services: Services, document_id: str) -> Document:
     return document.model_copy(update={"status": DocumentStatus.PENDING, "error": None})
 
 
-async def update_document(
-    services: Services, document_id: str, patch: DocumentPatch
-) -> Document:
+async def update_document(services: Services, document_id: str, patch: DocumentPatch) -> Document:
     """Apply an editable-field patch and re-project (FR-20)."""
     if patch.is_empty():
         raise ValidationError("No document fields provided to update.")
@@ -423,6 +421,4 @@ async def list_documents_by_doc_type(
 ) -> tuple[list[Document], int]:
     if await services.db.get_doc_type(doc_type_id) is None:
         raise NotFoundError(f"Doc-type '{doc_type_id}' was not found.")
-    return await services.db.list_documents_by_doc_type(
-        doc_type_id, page=page, page_size=page_size
-    )
+    return await services.db.list_documents_by_doc_type(doc_type_id, page=page, page_size=page_size)

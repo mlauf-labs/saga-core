@@ -172,9 +172,7 @@ class FakeSearch:
         keyword = (keyword_query or "").strip()
         semantic = (semantic_query or "").strip()
         if not keyword and not semantic:
-            raise ValidationError(
-                "Provide at least one of 'keyword_query' or 'semantic_query'."
-            )
+            raise ValidationError("Provide at least one of 'keyword_query' or 'semantic_query'.")
         documents = await self._candidates(
             doc_type=doc_type,
             folder_id=folder_id,

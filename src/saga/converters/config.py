@@ -27,12 +27,12 @@ class VlmConfig(BaseModel):
 
     Three mutually exclusive modes, selected by the ``mode`` field:
 
-    * ``api``    – Send page images to an external OpenAI-compatible endpoint
+    * ``api``    - Send page images to an external OpenAI-compatible endpoint
                    (Ollama, vLLM, LM Studio, …). Needs ``api_url`` + ``model``.
-    * ``preset`` – Use a built-in docling-serve preset; the model is loaded
+    * ``preset`` - Use a built-in docling-serve preset; the model is loaded
                    inside the docling-serve container (no external dependency).
                    Needs ``preset``.
-    * ``local``  – Download a HuggingFace model on first use and run it inline
+    * ``local``  - Download a HuggingFace model on first use and run it inline
                    inside the container (CPU/GPU via Transformers).
                    Needs ``repo_id`` and optionally the inference settings.
 
@@ -73,7 +73,9 @@ class VlmConfig(BaseModel):
     load_in_8bit: bool = True
 
     # ── shared settings (api + local modes) ──────────────────────────────────
-    prompt: str = "Convert this page to markdown. Extract all text and preserve tables and structure exactly."
+    prompt: str = (
+        "Convert this page to markdown. Extract all text and preserve tables and structure exactly."
+    )
     response_format: str = "markdown"  # "markdown" | "doctags"
     timeout: float = 120.0
     scale: float = 2.0

@@ -12,9 +12,7 @@ def test_folders_require_auth(client: TestClient) -> None:
     assert client.get("/folders").status_code == 401
 
 
-def test_create_and_get_folder_tree(
-    client: TestClient, auth_headers: dict[str, str]
-) -> None:
+def test_create_and_get_folder_tree(client: TestClient, auth_headers: dict[str, str]) -> None:
     created = client.post(
         "/folders",
         json={"name": "Finance", "description": "money", "metadata": {"team": "ops"}},
@@ -37,9 +35,9 @@ def test_create_and_get_folder_tree(
 
 
 def test_get_update_folder(client: TestClient, auth_headers: dict[str, str]) -> None:
-    folder_id = client.post(
-        "/folders", json={"name": "Legal"}, headers=auth_headers
-    ).json()["folder_id"]
+    folder_id = client.post("/folders", json={"name": "Legal"}, headers=auth_headers).json()[
+        "folder_id"
+    ]
 
     fetched = client.get(f"/folders/{folder_id}", headers=auth_headers)
     assert fetched.status_code == 200
@@ -74,9 +72,9 @@ async def test_documents_in_folder(
 
 
 def test_folder_notes_crud(client: TestClient, auth_headers: dict[str, str]) -> None:
-    folder_id = client.post(
-        "/folders", json={"name": "Notes"}, headers=auth_headers
-    ).json()["folder_id"]
+    folder_id = client.post("/folders", json={"name": "Notes"}, headers=auth_headers).json()[
+        "folder_id"
+    ]
 
     note = client.post(
         f"/folders/{folder_id}/notes", json={"content": "hello"}, headers=auth_headers
@@ -94,9 +92,7 @@ def test_folder_notes_crud(client: TestClient, auth_headers: dict[str, str]) -> 
     )
     assert updated.json()["content"] == "changed"
 
-    deleted = client.delete(
-        f"/folders/{folder_id}/notes/{note_id}", headers=auth_headers
-    )
+    deleted = client.delete(f"/folders/{folder_id}/notes/{note_id}", headers=auth_headers)
     assert deleted.status_code == 204
     assert client.get(f"/folders/{folder_id}/notes", headers=auth_headers).json() == []
 
@@ -104,9 +100,9 @@ def test_folder_notes_crud(client: TestClient, auth_headers: dict[str, str]) -> 
 def test_delete_folder_reject_when_not_empty(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
-    parent = client.post(
-        "/folders", json={"name": "Parent"}, headers=auth_headers
-    ).json()["folder_id"]
+    parent = client.post("/folders", json={"name": "Parent"}, headers=auth_headers).json()[
+        "folder_id"
+    ]
     client.post("/folders", json={"name": "Child", "parent_id": parent}, headers=auth_headers)
 
     rejected = client.delete(f"/folders/{parent}", headers=auth_headers)
@@ -114,9 +110,9 @@ def test_delete_folder_reject_when_not_empty(
 
 
 def test_delete_folder_cascade(client: TestClient, auth_headers: dict[str, str]) -> None:
-    parent = client.post(
-        "/folders", json={"name": "Parent"}, headers=auth_headers
-    ).json()["folder_id"]
+    parent = client.post("/folders", json={"name": "Parent"}, headers=auth_headers).json()[
+        "folder_id"
+    ]
     child = client.post(
         "/folders", json={"name": "Child", "parent_id": parent}, headers=auth_headers
     ).json()["folder_id"]
@@ -128,9 +124,9 @@ def test_delete_folder_cascade(client: TestClient, auth_headers: dict[str, str])
 
 
 def test_delete_folder_reparent(client: TestClient, auth_headers: dict[str, str]) -> None:
-    parent = client.post(
-        "/folders", json={"name": "Parent"}, headers=auth_headers
-    ).json()["folder_id"]
+    parent = client.post("/folders", json={"name": "Parent"}, headers=auth_headers).json()[
+        "folder_id"
+    ]
     child = client.post(
         "/folders", json={"name": "Child", "parent_id": parent}, headers=auth_headers
     ).json()["folder_id"]

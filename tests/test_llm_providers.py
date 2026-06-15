@@ -153,8 +153,8 @@ def test_multi_server_injects_failover_clients(monkeypatch: pytest.MonkeyPatch) 
     cfg = _config("ollama", LlmProviderSettings(model="llama3.1:8b"))
     model = build_chat_model(cfg)
 
-    async_client = model.http_async_client
-    sync_client = model.http_client
+    async_client = model.http_async_client  # type: ignore[attr-defined]
+    sync_client = model.http_client  # type: ignore[attr-defined]
     assert isinstance(async_client._transport, OllamaFailoverAsyncTransport)
     assert isinstance(sync_client._transport, OllamaFailoverTransport)
     # Both directions share one pool, so load/health knowledge is shared.
@@ -171,10 +171,9 @@ def test_primary_and_fallback_share_one_pool(monkeypatch: pytest.MonkeyPatch) ->
     primary = build_chat_model(cfg)
     fallback = build_fallback_chat_model(cfg)
     assert fallback is not None
-    assert (
-        primary.http_async_client._transport._pool
-        is fallback.http_async_client._transport._pool
-    )
+    primary_pool = primary.http_async_client._transport._pool  # type: ignore[attr-defined]
+    fallback_pool = fallback.http_async_client._transport._pool  # type: ignore[attr-defined]
+    assert primary_pool is fallback_pool
 
 
 def test_multi_server_not_applied_to_openai(monkeypatch: pytest.MonkeyPatch) -> None:

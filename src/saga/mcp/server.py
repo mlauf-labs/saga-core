@@ -282,22 +282,25 @@ def build_server(
     async def create_folder(
         name: Annotated[
             str,
-            Field(
-                description=(
-                    "Folder name. " + _FOLDER_NAME_CONSTRAINT
-                )
-            ),
+            Field(description=("Folder name. " + _FOLDER_NAME_CONSTRAINT)),
         ],
         description: Annotated[str | None, Field(description="Folder description.")] = None,
         parent_id: Annotated[str | None, Field(description="Parent id, or null for root.")] = None,
         metadata: Annotated[dict[str, str] | None, Field(description="Key/value metadata.")] = None,
-        emoji: Annotated[str | None, Field(description="Single emoji for visual display (not part of the name).")] = None,
+        emoji: Annotated[
+            str | None, Field(description="Single emoji for visual display (not part of the name).")
+        ] = None,
     ) -> dict[str, Any]:
         error = _validate_folder_name(name)
         if error:
             return {"error": error, "allowed_characters": _FOLDER_NAME_ALLOWED}
         folder = await service.create_folder(
-            services, name=name, description=description, parent_id=parent_id, metadata=metadata, emoji=emoji
+            services,
+            name=name,
+            description=description,
+            parent_id=parent_id,
+            metadata=metadata,
+            emoji=emoji,
         )
         return folder.model_dump(mode="json")
 
@@ -305,18 +308,17 @@ def build_server(
         folder_id: Annotated[str, Field(description="The folder id.")],
         name: Annotated[
             str | None,
-            Field(
-                description=(
-                    "New name for the folder. " + _FOLDER_NAME_CONSTRAINT
-                )
-            ),
+            Field(description=("New name for the folder. " + _FOLDER_NAME_CONSTRAINT)),
         ] = None,
         description: Annotated[str | None, Field(description="New description.")] = None,
         parent_id: Annotated[str | None, Field(description="New parent id (move).")] = None,
         metadata: Annotated[
             dict[str, str] | None, Field(description="Replacement metadata.")
         ] = None,
-        emoji: Annotated[str | None, Field(description="New single emoji for visual display (not part of the name).")] = None,
+        emoji: Annotated[
+            str | None,
+            Field(description="New single emoji for visual display (not part of the name)."),
+        ] = None,
     ) -> dict[str, Any]:
         if name is not None:
             error = _validate_folder_name(name)
@@ -338,9 +340,7 @@ def build_server(
 
     async def delete_folder(
         folder_id: Annotated[str, Field(description="The folder id.")],
-        strategy: Annotated[
-            str, Field(description="reject | reparent | cascade.")
-        ] = "reject",
+        strategy: Annotated[str, Field(description="reject | reparent | cascade.")] = "reject",
     ) -> dict[str, str]:
         await service.delete_folder(services, folder_id, strategy=strategy)
         return {"status": "deleted", "folder_id": folder_id}
@@ -348,16 +348,23 @@ def build_server(
     async def create_doc_type(
         name: Annotated[str, Field(description="Doc-type name.")],
         description: Annotated[str | None, Field(description="When to use this type.")] = None,
-        emoji: Annotated[str | None, Field(description="Single emoji for visual display (not part of the name).")] = None,
+        emoji: Annotated[
+            str | None, Field(description="Single emoji for visual display (not part of the name).")
+        ] = None,
     ) -> dict[str, Any]:
-        doc_type = await service.create_doc_type(services, name=name, description=description, emoji=emoji)
+        doc_type = await service.create_doc_type(
+            services, name=name, description=description, emoji=emoji
+        )
         return doc_type.model_dump(mode="json")
 
     async def update_doc_type(
         doc_type_id: Annotated[str, Field(description="The doc-type id.")],
         name: Annotated[str | None, Field(description="New name.")] = None,
         description: Annotated[str | None, Field(description="New description.")] = None,
-        emoji: Annotated[str | None, Field(description="New single emoji for visual display (not part of the name).")] = None,
+        emoji: Annotated[
+            str | None,
+            Field(description="New single emoji for visual display (not part of the name)."),
+        ] = None,
     ) -> dict[str, Any]:
         doc_type = await service.update_doc_type(
             services, doc_type_id, name=name, description=description, emoji=emoji

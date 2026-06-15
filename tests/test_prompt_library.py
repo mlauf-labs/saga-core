@@ -17,7 +17,13 @@ def test_load_prompt_with_front_matter() -> None:
 
 def test_render_prompt_substitutes_variables() -> None:
     lib = PromptLibrary("prompts")
-    rendered = lib.render("analysis/summary.md", filename="invoice_2026_01.pdf", output_language="English")
+    rendered = lib.render(
+        "analysis/summary.md",
+        filename="invoice_2026_01.pdf",
+        output_language="English",
+        store_context="A personal document archive.",
+        summary_instructions="",
+    )
     assert "invoice_2026_01.pdf" in rendered
     assert "{{" not in rendered
 

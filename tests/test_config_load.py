@@ -20,8 +20,8 @@ def test_load_config_from_repo_files() -> None:
     assert cfg.name == "saga"
     assert cfg.api.port == 8000
     assert cfg.api.enable_swagger is True
-    assert cfg.opensearch.document_index == "documents"
-    assert cfg.opensearch.chunk_index == "document_chunks"
+    assert cfg.opensearch.document_index == "saga-documents"
+    assert cfg.opensearch.chunk_index == "saga-document_chunks"
     assert cfg.chunking.max_tokens > 0
 
 

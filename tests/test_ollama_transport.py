@@ -20,9 +20,7 @@ def _pool(*urls: str) -> OllamaServerPool:
 
 
 def _client(pool: OllamaServerPool, handler: Any, **kwargs: Any) -> httpx.AsyncClient:
-    transport = OllamaFailoverAsyncTransport(
-        pool, inner=httpx.MockTransport(handler), **kwargs
-    )
+    transport = OllamaFailoverAsyncTransport(pool, inner=httpx.MockTransport(handler), **kwargs)
     return httpx.AsyncClient(transport=transport, base_url=_A)
 
 

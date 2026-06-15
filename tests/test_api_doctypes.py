@@ -12,9 +12,7 @@ def test_doctypes_require_auth(client: TestClient) -> None:
     assert client.get("/doc-types").status_code == 401
 
 
-def test_create_list_get_update_doc_type(
-    client: TestClient, auth_headers: dict[str, str]
-) -> None:
+def test_create_list_get_update_doc_type(client: TestClient, auth_headers: dict[str, str]) -> None:
     created = client.post(
         "/doc-types",
         json={"name": "invoice", "description": "a bill"},
@@ -38,9 +36,9 @@ def test_create_list_get_update_doc_type(
 
 
 def test_delete_unused_doc_type(client: TestClient, auth_headers: dict[str, str]) -> None:
-    doc_type_id = client.post(
-        "/doc-types", json={"name": "memo"}, headers=auth_headers
-    ).json()["doc_type_id"]
+    doc_type_id = client.post("/doc-types", json={"name": "memo"}, headers=auth_headers).json()[
+        "doc_type_id"
+    ]
     assert client.delete(f"/doc-types/{doc_type_id}", headers=auth_headers).status_code == 204
 
 
@@ -62,9 +60,7 @@ async def test_list_documents_of_doc_type(
     doc = await seed_document(db)
     await db.update_document(doc.document_id, doc_type_id=doc_type.doc_type_id)
 
-    response = client.get(
-        f"/doc-types/{doc_type.doc_type_id}/documents", headers=auth_headers
-    )
+    response = client.get(f"/doc-types/{doc_type.doc_type_id}/documents", headers=auth_headers)
     assert response.status_code == 200
     body = response.json()
     assert body["total"] == 1

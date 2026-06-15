@@ -294,9 +294,7 @@ def _resolve_prompt_config(
     if explicit:
         path = Path(explicit)
         if not path.is_file():
-            raise ConfigError(
-                f"{env_var_file} points to a non-existent file: {path}"
-            )
+            raise ConfigError(f"{env_var_file} points to a non-existent file: {path}")
         return _load_prompt_file(path)
 
     default = config_dir / "prompts" / filename

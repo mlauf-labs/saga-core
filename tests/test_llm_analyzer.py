@@ -11,8 +11,8 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 import pytest
-from saidex import ExtractionMode, StructuredOutputStats
 from pydantic import BaseModel
+from saidex import ExtractionMode, StructuredOutputStats
 
 from saga.core.models import DocType
 from saga.llm import analyzer as analyzer_module

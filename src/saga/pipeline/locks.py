@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, AsyncIterator
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from arq.connections import ArqRedis
 
 # Generous timeout: folder placement can take 30-60 s with LLM tool-call loops.
@@ -30,9 +32,7 @@ _POLL_INTERVAL_S = 0.5
 
 
 @asynccontextmanager
-async def folder_placement_lock(
-    redis: ArqRedis, store_name: str
-) -> AsyncIterator[None]:
+async def folder_placement_lock(redis: ArqRedis, store_name: str) -> AsyncIterator[None]:
     """Serialise folder-placement across concurrent ARQ workers.
 
     Acquires a Redis ``SET NX EX`` lock before yielding and unconditionally

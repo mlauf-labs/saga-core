@@ -26,7 +26,9 @@ router = APIRouter(prefix="/doc-types", tags=["doc-types"], dependencies=[AuthDe
     summary="Create a doc-type",
 )
 async def create_doc_type(services: ServicesDep, body: DocTypeCreate) -> DocType:
-    return await service.create_doc_type(services, name=body.name, description=body.description, emoji=body.emoji)
+    return await service.create_doc_type(
+        services, name=body.name, description=body.description, emoji=body.emoji
+    )
 
 
 @router.get("", response_model=list[DocType], summary="List all doc-types")
@@ -40,9 +42,7 @@ async def get_doc_type(services: ServicesDep, doc_type_id: str) -> DocType:
 
 
 @router.patch("/{doc_type_id}", response_model=DocType, summary="Update a doc-type")
-async def update_doc_type(
-    services: ServicesDep, doc_type_id: str, body: DocTypeUpdate
-) -> DocType:
+async def update_doc_type(services: ServicesDep, doc_type_id: str, body: DocTypeUpdate) -> DocType:
     return await service.update_doc_type(
         services, doc_type_id, name=body.name, description=body.description, emoji=body.emoji
     )
