@@ -35,10 +35,10 @@ from saga.llm.schemas import (
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
+    from saidex import Tool
 
     from saga.core.models import DocType
     from saga.llm.base import ChatModel
-    from saga.llm.folder_tools import Tool
     from saga.llm.prompts import PromptLibrary
     from saga.storage import PostgresStore
 

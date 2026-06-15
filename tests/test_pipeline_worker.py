@@ -111,6 +111,7 @@ async def test_on_startup_checks_ollama_models(monkeypatch: pytest.MonkeyPatch) 
 
     # Default config: LLM + embeddings provider are ollama -> blocking check runs.
     ensure.assert_awaited_once()
+    assert ensure.await_args is not None
     urls = ensure.await_args.args[0]
     models = ensure.await_args.args[1]
     assert urls and all(url.startswith("http") for url in urls)

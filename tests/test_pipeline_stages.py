@@ -16,6 +16,7 @@ from saga.core.models import DocumentStatus, ExtractedValue
 from saga.llm.schemas import (
     DocTypeAssignment,
     ExtractedValueOut,
+    FolderDecision,
     FolderPlacement,
     NewFolder,
     Summary,
@@ -134,6 +135,11 @@ class _FakeAnalyzer:
     async def place_in_folder(self, **kwargs: Any) -> FolderPlacement | None:
         self.calls["place_in_folder"] = kwargs
         return self._placement
+
+    async def place_in_folder_agentic(self, **kwargs: Any) -> FolderDecision | None:
+        # Exercise the legacy fallback: return None so place_in_folder runs.
+        self.calls["place_in_folder_agentic"] = kwargs
+        return None
 
 
 # --------------------------------------------------------------------------- #
