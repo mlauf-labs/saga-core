@@ -1,6 +1,6 @@
 # Operations & deployment guide
 
-This guide covers running DocStore in development and hardening it for production.
+This guide covers running Saga in development and hardening it for production.
 
 ## Components
 
@@ -10,10 +10,11 @@ This guide covers running DocStore in development and hardening it for productio
 |---------|------|------|
 | `api` | 8000 | REST API + Swagger UI. |
 | `mcp` | 8100 | MCP server (Streamable HTTP) for agents. |
-| `worker` | – | ARQ ingestion worker (convert → analyse → chunk → embed → index). |
+| `worker` | – | ARQ ingestion worker (convert → classify → extract → summarise → similarity → place → project + index). |
 | `docling` | 5001 | PDF conversion (OCR/layout). |
 | `kreuzberg` | 8001→8000 | Non-PDF + image/scanned OCR conversion. |
-| `opensearch` | 9200 | Document + vector indices, hybrid search. |
+| `postgres` | 5432 | System of record: documents, folders, doc-types, notes, memberships. |
+| `opensearch` | 9200 | Search projection: document + vector indices. |
 | `opensearch-dashboards` | 5601 | Index inspection UI. |
 | `minio` | 9000 / 9001 | Object storage for originals (+ console). |
 | `redis` | 6379 | ARQ job queue. |
@@ -35,7 +36,8 @@ docker compose exec ollama ollama pull nomic-embed-text
 
 Upload returns `202` with a `document_id`; processing is asynchronous. Poll
 `GET /documents/{id}/status` until `ready` (or `failed`, which stores an actionable
-error). Status flow: `pending → converting → analyzing → indexing → ready`.
+error). Status flow: `pending → converting → classifying_type → analyzing →
+summarizing → classifying → indexing → ready`.
 
 ## Scaling
 
@@ -46,8 +48,8 @@ for request load.
 docker compose up -d --scale worker=4 --scale api=2
 ```
 
-State lives in OpenSearch, MinIO and Redis. Put a reverse proxy / load balancer in
-front of `api` and `mcp`.
+State lives in Postgres (system of record), OpenSearch (search projection), MinIO and
+Redis. Put a reverse proxy / load balancer in front of `api` and `mcp`.
 
 ## Resource sizing
 
@@ -59,7 +61,7 @@ footprint, point `providers.yaml` at managed OpenAI/Azure endpoints and drop the
 ## Production hardening
 
 ### Secrets
-- Never commit `.env`. Rotate `DOCSTORE_API_TOKENS` regularly; use long random tokens.
+- Never commit `.env`. Rotate `SAGA_API_TOKENS` regularly; use long random tokens.
 - Supply secrets via your orchestrator's secret store, not plain env files.
 
 ### OpenSearch security + TLS
@@ -72,7 +74,13 @@ production:
 
 ### MinIO
 - Set strong `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`; enable TLS (`minio.secure: true`).
-- Use a dedicated, least-privilege service account for the `docstore-originals` bucket.
+- Use a dedicated, least-privilege service account for the `saga-originals` bucket.
+
+### Postgres
+- Set a strong `POSTGRES_PASSWORD`; restrict network access to the app tier only.
+- Back it up regularly — it is the **system of record** (FR-40); the OpenSearch
+  projection is rebuildable, Postgres is not. Tune `postgres.pool_size` /
+  `max_overflow` for your worker/API concurrency.
 
 ### Transport
 - Terminate TLS at a reverse proxy for `api` and `mcp`; both require Bearer tokens
@@ -101,7 +109,8 @@ JSON in prod (`LOG_RENDERER=json`). Each ingestion log line carries the document
 
 ### LLM analysis logging
 
-Each metadata-analysis step (classification, value extraction, categorisation) logs:
+Each metadata-analysis step (doc-type classification, value extraction, summary,
+folder placement) logs:
 
 - `analysis_step_start` — `step`, input `chars`.
 - `analysis_step_done` / `analysis_step_failed` — `llm_calls` (number of LLM calls in
@@ -127,9 +136,10 @@ time across these layers — tune the model/endpoint first.
 
 ## Backups
 
-Use `docstore-backup` to export everything to a directory tree — see
-[`api/backup.md`](api/backup.md). Also snapshot the OpenSearch indices and the MinIO
-bucket for disaster recovery.
+Use `saga-backup` to export everything to a directory tree — see
+[`api/backup.md`](api/backup.md). For disaster recovery, back up **Postgres** (the
+system of record) and the MinIO bucket; the OpenSearch projection can be rebuilt from
+those, but snapshotting the indices speeds recovery.
 
 ## Changing the embedding model
 

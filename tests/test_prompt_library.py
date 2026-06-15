@@ -4,21 +4,21 @@ from __future__ import annotations
 
 import pytest
 
-from docstore.core.errors import ConfigError
-from docstore.llm.prompts import PromptLibrary
+from saga.core.errors import ConfigError
+from saga.llm.prompts import PromptLibrary
 
 
 def test_load_prompt_with_front_matter() -> None:
     lib = PromptLibrary("prompts")
-    meta, body = lib.load("analysis/classification.md")
-    assert meta.get("id") == "classification"
-    assert "classify" in body.lower()
+    meta, body = lib.load("mcp/get_document.md")
+    assert meta.get("tool") == "get_document"
+    assert "document" in body.lower()
 
 
 def test_render_prompt_substitutes_variables() -> None:
     lib = PromptLibrary("prompts")
-    rendered = lib.render("analysis/classification.md", title="Invoice 1", content="hello")
-    assert "Invoice 1" in rendered
+    rendered = lib.render("analysis/summary.md", filename="invoice_2026_01.pdf", output_language="English")
+    assert "invoice_2026_01.pdf" in rendered
     assert "{{" not in rendered
 
 

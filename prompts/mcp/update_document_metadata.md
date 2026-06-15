@@ -2,21 +2,17 @@
 tool: update_document_metadata
 ---
 
-Update a document's editable metadata. Use this to correct or refine a document's
-classification, extracted values, or category placement. Only the fields you provide
-are changed; omitted fields are left untouched. Changes to `doc_type`,
-`category_paths` or `extracted_values` are automatically propagated to the search
-index so subsequent searches and filters stay consistent.
+Update a document's editable fields. Only the fields you provide are changed; omitted
+fields are left untouched. Changes are re-projected to the search index automatically.
 
 Parameters:
-- `document_id` (string, required): the document to update.
-- `doc_type` (string, optional): the document type label (e.g. `invoice`).
-- `extracted_values` (array, optional): full replacement list of extracted values,
-  each `{ "key", "type", "value", "normalized"?, "confidence"? }`.
-- `folder_structure` (array of strings, optional): ordered hierarchical paths; the
-  first entry is canonical and drives the backup directory layout.
-- `category_paths` (array of strings, optional): hierarchical category paths, e.g.
-  `["Insurance/Health"]`.
+- `document_id` (required): the document to update.
+- `title` (optional): new display title.
+- `summary` (optional): new short summary.
+- `doc_type` (optional): a doc-type **id or name**. An unknown name creates a new
+  doc-type. A document always has exactly one doc-type.
+- `extracted_values` (optional): full replacement list, each
+  `{ "key", "type", "value", "normalized"?, "confidence"? }`.
 
-Returns the updated document record. Fails with a not-found error if the document
-does not exist, or a validation error if no fields are provided.
+To change folder membership use the folder-assignment tools, not this tool. Returns the
+updated document record.

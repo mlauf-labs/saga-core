@@ -1,0 +1,7 @@
+# Transient override for local smoke-testing only: remap MinIO host ports to
+# avoid a clash with an already-running service on host port 9000 (portainer).
+services:
+  minio:
+    ports: !override
+      - "9002:9000"
+      - "9003:9001"

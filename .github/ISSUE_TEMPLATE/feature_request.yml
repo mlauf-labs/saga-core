@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an idea or enhancement for DocStore
+description: Suggest an idea or enhancement for Saga
 labels: [enhancement]
 body:
   - type: textarea

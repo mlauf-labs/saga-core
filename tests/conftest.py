@@ -1,122 +1,46 @@
-"""Shared test fixtures: in-memory fakes and a configured API test client."""
+"""Shared test fixtures.
+
+API/service tests run against a *real* :class:`PostgresStore` backed by an in-memory
+SQLite database (aiosqlite), so the relational system of record is exercised for real.
+OpenSearch is replaced by a small in-memory projection, MinIO/Redis/embeddings by
+fakes, and the search engine by a db-backed fake that implements the ``SearchEngine``
+protocol (the real RRF :class:`SearchService` is unit-tested separately).
+"""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import tempfile
+from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
 
-from docstore.api.app import create_app
-from docstore.api.dependencies import Services
-from docstore.core.config import AppConfig
-from docstore.core.errors import NotFoundError
-from docstore.core.models import CategoryNode, Document, DocumentStatus, ExtractedValue, SearchHit
+from saga.api.app import create_app
+from saga.api.dependencies import Services
+from saga.core.config import AppConfig
+from saga.core.errors import ValidationError
+from saga.core.models import (
+    Document,
+    DocumentStatus,
+    HybridSearchResult,
+    SearchResultItem,
+)
+from saga.storage.postgres import PostgresStore
+
+if TYPE_CHECKING:
+    from saga.core.models import FolderNode
 
 TEST_TOKEN = "test-token"
 
 
-class InMemoryDocumentStore:
-    """In-memory stand-in for the OpenSearch document store."""
-
-    def __init__(self) -> None:
-        self.docs: dict[str, Document] = {}
-
-    async def find_by_hash(self, content_hash: str) -> Document | None:
-        return next((d for d in self.docs.values() if d.content_hash == content_hash), None)
-
-    async def get_document(self, document_id: str) -> Document | None:
-        return self.docs.get(document_id)
-
-    async def index_document(self, document: Document) -> None:
-        self.docs[document.document_id] = document
-
-    async def update_status(
-        self, document_id: str, status: DocumentStatus, error: str | None = None
-    ) -> None:
-        doc = self.docs.get(document_id)
-        if doc is not None:
-            self.docs[document_id] = doc.model_copy(update={"status": status, "error": error})
-
-    async def delete_document(self, document_id: str) -> None:
-        self.docs.pop(document_id, None)
-
-    async def list_documents(self, *, page: int, page_size: int) -> tuple[list[Document], int]:
-        ordered = sorted(self.docs.values(), key=lambda d: d.created_at, reverse=True)
-        start = (page - 1) * page_size
-        return ordered[start : start + page_size], len(ordered)
-
-    async def scroll_documents(
-        self, *, page_size: int, search_after: list[object] | None = None
-    ) -> tuple[list[Document], list[object] | None]:
-        ordered = sorted(self.docs.values(), key=lambda d: d.document_id)
-        offset = int(str(search_after[0])) if search_after else 0
-        page = ordered[offset : offset + page_size]
-        next_cursor: list[object] | None = (
-            [offset + page_size] if len(page) == page_size and page else None
-        )
-        return page, next_cursor
-
-    async def search_documents(
-        self,
-        *,
-        query: str | None,
-        page: int,
-        page_size: int,
-        doc_type: str | None = None,
-        category_path: str | None = None,
-        title: str | None = None,
-        status: str | None = None,
-        extracted_values: dict[str, str] | None = None,
-    ) -> tuple[list[Document], int]:
-        def matches(doc: Document) -> bool:
-            if query and query.lower() not in (
-                f"{doc.title} {doc.content_markdown or ''} {doc.doc_type or ''}".lower()
-            ):
-                return False
-            if doc_type and doc.doc_type != doc_type:
-                return False
-            if title and doc.title != title:
-                return False
-            if status and doc.status.value != status:
-                return False
-            if category_path and not any(
-                p == category_path or p.startswith(f"{category_path}/") for p in doc.category_paths
-            ):
-                return False
-            for key, value in (extracted_values or {}).items():
-                if not any(v.key == key and v.value == value for v in doc.extracted_values):
-                    return False
-            return True
-
-        hits = [d for d in self.docs.values() if matches(d)]
-        start = (page - 1) * page_size
-        return hits[start : start + page_size], len(hits)
-
-    async def update_document_fields(
-        self,
-        document_id: str,
-        *,
-        doc_type: str | None = None,
-        extracted_values: list[ExtractedValue] | None = None,
-        folder_structure: list[str] | None = None,
-        category_paths: list[str] | None = None,
-    ) -> Document:
-        doc = self.docs.get(document_id)
-        if doc is None:
-            raise NotFoundError(f"Document '{document_id}' was not found.")
-        update: dict[str, object] = {}
-        if doc_type is not None:
-            update["doc_type"] = doc_type
-        if extracted_values is not None:
-            update["extracted_values"] = extracted_values
-        if folder_structure is not None:
-            update["folder_structure"] = folder_structure
-        if category_paths is not None:
-            update["category_paths"] = category_paths
-        updated = doc.model_copy(update=update)
-        self.docs[document_id] = updated
-        return updated
+# --------------------------------------------------------------------------- #
+# Fakes                                                                         #
+# --------------------------------------------------------------------------- #
 
 
 class InMemoryBinaryStore:
@@ -127,7 +51,7 @@ class InMemoryBinaryStore:
 
     async def put_object(self, object_name: str, data: bytes, content_type: str) -> str:
         self.objects[object_name] = data
-        return f"docstore-originals/{object_name}"
+        return f"saga-originals/{object_name}"
 
     async def get_object(self, object_name: str) -> bytes:
         return self.objects[object_name]
@@ -146,52 +70,140 @@ class FakeQueue:
         self.jobs.append((function, args))
 
 
-class FakeSearch:
-    """In-memory stand-in for the search service (shares the document store dict)."""
+class FakeEmbedder:
+    """Deterministic embedder for tests (no network)."""
 
-    def __init__(self, store: InMemoryDocumentStore) -> None:
-        self._store = store
-        self._documents = store.docs
+    def __init__(self, dimension: int = 8) -> None:
+        self.dimension = dimension
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[float(len(t) % 7), *([0.0] * (self.dimension - 1))] for t in texts]
+
+    async def aclose(self) -> None:
+        return None
+
+
+class InMemoryProjection:
+    """In-memory stand-in for the OpenSearch projection (write side only)."""
+
+    def __init__(self) -> None:
+        self.projected: dict[str, dict[str, Any]] = {}
+
+    async def project_document(
+        self,
+        document: Document,
+        *,
+        folder_ancestor_ids: list[str],
+        summary_embedding: list[float] | None = None,
+    ) -> None:
+        self.projected[document.document_id] = {
+            "document": document,
+            "folder_ancestor_ids": folder_ancestor_ids,
+            "summary_embedding": summary_embedding,
+        }
+
+    async def delete_document(self, document_id: str) -> None:
+        self.projected.pop(document_id, None)
+
+
+class FakeSearch:
+    """Db-backed ``SearchEngine`` implementation for API tests (no OpenSearch)."""
+
+    def __init__(self, db: PostgresStore) -> None:
+        self._db = db
+
+    async def _all_documents(self) -> list[Document]:
+        documents: list[Document] = []
+        after: str | None = None
+        while True:
+            page, nxt = await self._db.scroll_documents(page_size=200, after_id=after)
+            documents.extend(page)
+            if not nxt:
+                break
+            after = nxt
+        return documents
+
+    async def _candidates(
+        self,
+        *,
+        doc_type: str | None,
+        folder_id: str | None,
+        include_subtree: bool,
+        title: str | None,
+        status: str | None,
+        filters: dict[str, str] | None,
+    ) -> list[Document]:
+        if folder_id is not None:
+            documents, _ = await self._db.list_documents_in_folder(
+                folder_id, include_subtree=include_subtree, page=1, page_size=1000
+            )
+        else:
+            documents = await self._all_documents()
+
+        def keep(doc: Document) -> bool:
+            if doc_type is not None and doc.doc_type != doc_type:
+                return False
+            if title is not None and doc.title != title:
+                return False
+            if status is not None and doc.status.value != status:
+                return False
+            for key, value in (filters or {}).items():
+                if not any(v.key == key and v.value == value for v in doc.extracted_values):
+                    return False
+            return True
+
+        return [doc for doc in documents if keep(doc)]
 
     async def hybrid_search(
         self,
         *,
-        query: str,
+        keyword_query: str | None = None,
+        semantic_query: str | None = None,
         top_k: int | None = None,
         doc_type: str | None = None,
-        category_path: str | None = None,
-        title: str | None = None,
-        filters: dict[str, str] | None = None,
-    ) -> list[SearchHit]:
-        return [
-            SearchHit(
-                document_id=doc.document_id,
-                chunk_id=f"{doc.document_id}:0",
-                snippet=query,
-                score=1.0,
-                title=doc.title,
-                doc_type=doc.doc_type,
-                category_paths=doc.category_paths,
-            )
-            for doc in self._documents.values()
-            if (title is None or doc.title == title)
-        ][: top_k or 10]
-
-    async def get_category_tree(
-        self, *, prefix: str | None = None, max_depth: int | None = None
-    ) -> list[CategoryNode]:
-        return [CategoryNode(path="Finance", name="Finance", document_count=1)]
-
-    async def list_documents_in_category(
-        self,
-        *,
-        category_path: str,
+        folder_id: str | None = None,
         include_subtree: bool = True,
-        page: int = 1,
-        page_size: int = 25,
-    ) -> tuple[list[Document], int]:
-        docs = [d for d in self._documents.values() if category_path in d.category_paths]
-        return docs, len(docs)
+        title: str | None = None,
+        status: str | None = None,
+        created_from: str | None = None,
+        created_to: str | None = None,
+        filters: dict[str, str] | None = None,
+    ) -> HybridSearchResult:
+        keyword = (keyword_query or "").strip()
+        semantic = (semantic_query or "").strip()
+        if not keyword and not semantic:
+            raise ValidationError(
+                "Provide at least one of 'keyword_query' or 'semantic_query'."
+            )
+        documents = await self._candidates(
+            doc_type=doc_type,
+            folder_id=folder_id,
+            include_subtree=include_subtree,
+            title=title,
+            status=status,
+            filters=filters,
+        )
+        query = (keyword or semantic).lower()
+        matched = [
+            doc
+            for doc in documents
+            if not query
+            or query in f"{doc.title} {doc.summary or ''} {doc.content_markdown or ''}".lower()
+        ]
+        limit = top_k or 10
+        results = [
+            SearchResultItem(
+                document_id=doc.document_id,
+                title=doc.title,
+                score=1.0,
+                doc_type=doc.doc_type,
+                summary=doc.summary,
+                folder_ids=doc.folder_ids,
+                snippet=keyword or semantic,
+            )
+            for doc in matched[:limit]
+        ]
+        return HybridSearchResult(results=results)
 
     async def search_documents(
         self,
@@ -200,51 +212,88 @@ class FakeSearch:
         page: int = 1,
         page_size: int = 25,
         doc_type: str | None = None,
-        category_path: str | None = None,
+        folder_id: str | None = None,
+        include_subtree: bool = True,
         title: str | None = None,
         status: str | None = None,
         filters: dict[str, str] | None = None,
     ) -> tuple[list[Document], int]:
-        return await self._store.search_documents(
-            query=query,
-            page=page,
-            page_size=page_size,
+        documents = await self._candidates(
             doc_type=doc_type,
-            category_path=category_path,
+            folder_id=folder_id,
+            include_subtree=include_subtree,
             title=title,
             status=status,
-            extracted_values=filters,
+            filters=filters,
+        )
+        if query:
+            needle = query.lower()
+            documents = [
+                doc
+                for doc in documents
+                if needle
+                in f"{doc.title} {doc.content_markdown or ''} {doc.doc_type or ''}".lower()
+            ]
+        total = len(documents)
+        start = (page - 1) * page_size
+        return documents[start : start + page_size], total
+
+    async def get_document(self, document_id: str) -> Document | None:
+        return await self._db.get_document(document_id)
+
+    async def get_folder_tree(
+        self, *, prefix: str | None = None, max_depth: int | None = None
+    ) -> list[FolderNode]:
+        return await self._db.folder_tree(prefix=prefix, max_depth=max_depth)
+
+    async def list_documents_in_folder(
+        self,
+        *,
+        folder_id: str,
+        include_subtree: bool = True,
+        page: int = 1,
+        page_size: int = 25,
+    ) -> tuple[list[Document], int]:
+        return await self._db.list_documents_in_folder(
+            folder_id, include_subtree=include_subtree, page=page, page_size=page_size
         )
 
-    async def update_document_metadata(
-        self,
-        document_id: str,
-        *,
-        doc_type: str | None = None,
-        extracted_values: list[ExtractedValue] | None = None,
-        folder_structure: list[str] | None = None,
-        category_paths: list[str] | None = None,
-    ) -> Document:
-        return await self._store.update_document_fields(
-            document_id,
-            doc_type=doc_type,
-            extracted_values=extracted_values,
-            folder_structure=folder_structure,
-            category_paths=category_paths,
-        )
+
+# --------------------------------------------------------------------------- #
+# Fixtures                                                                      #
+# --------------------------------------------------------------------------- #
+
+
+@pytest_asyncio.fixture
+async def db() -> AsyncIterator[PostgresStore]:
+    """A real PostgresStore backed by a temp-file SQLite database (aiosqlite)."""
+    tmp = Path(tempfile.mkdtemp()) / "saga-test.sqlite"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp}", poolclass=NullPool)
+    store = PostgresStore(AppConfig().postgres, engine=engine)
+    await store.bootstrap()
+    try:
+        yield store
+    finally:
+        await store.close()
+        tmp.unlink(missing_ok=True)
 
 
 @pytest.fixture
-def services() -> Services:
-    config = AppConfig()
-    config.security.bearer_tokens = TEST_TOKEN
-    document_store = InMemoryDocumentStore()
+def config() -> AppConfig:
+    cfg = AppConfig()
+    cfg.security.bearer_tokens = TEST_TOKEN
+    return cfg
+
+
+@pytest_asyncio.fixture
+async def services(db: PostgresStore, config: AppConfig) -> Services:
     return Services(
         config=config,
-        opensearch=document_store,
+        db=db,
+        opensearch=InMemoryProjection(),
         minio=InMemoryBinaryStore(),
         queue=FakeQueue(),
-        search=FakeSearch(document_store),
+        search=FakeSearch(db),
     )
 
 
@@ -258,3 +307,46 @@ def client(services: Services) -> Iterator[TestClient]:
 @pytest.fixture
 def auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {TEST_TOKEN}"}
+
+
+# --------------------------------------------------------------------------- #
+# Helpers                                                                       #
+# --------------------------------------------------------------------------- #
+
+
+async def seed_document(
+    db: PostgresStore,
+    *,
+    title: str = "Doc.pdf",
+    filename: str | None = None,
+    content: str = "hello world",
+    summary: str | None = None,
+    status: DocumentStatus = DocumentStatus.READY,
+    content_hash: str | None = None,
+) -> Document:
+    """Insert a document straight into the system of record for tests."""
+    import uuid
+    from datetime import UTC, datetime
+
+    doc_id = uuid.uuid4().hex
+    now = datetime.now(UTC)
+    document = Document(
+        document_id=doc_id,
+        title=title,
+        filename=filename if filename is not None else title,
+        mime_type="application/pdf",
+        size_bytes=len(content.encode()),
+        content_hash=content_hash or uuid.uuid4().hex,
+        minio_object=f"saga-originals/{doc_id}",
+        status=DocumentStatus.PENDING,
+        created_at=now,
+        updated_at=now,
+    )
+    await db.create_document(document)
+    await db.update_content(doc_id, content)
+    if summary is not None:
+        await db.update_summary(doc_id, summary)
+    await db.update_status(doc_id, status)
+    fetched = await db.get_document(doc_id)
+    assert fetched is not None
+    return fetched

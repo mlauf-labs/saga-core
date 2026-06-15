@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from docstore.mcp.auth import BearerAuthMiddleware
+from saga.mcp.auth import BearerAuthMiddleware
 
 
 def _app() -> FastAPI:

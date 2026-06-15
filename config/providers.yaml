@@ -2,6 +2,33 @@
 # Providers are selected independently. Supported: ollama | openai | azure.
 # Default: ollama (local, no API keys).
 
+# Multi-server setup for the "ollama" provider (LLM + embeddings share the fleet).
+# Requests go to the healthy server with the fewest running requests (least-busy),
+# so fast machines automatically receive more work; a switched-off server triggers
+# failover to the next one. Empty url slots are ignored. When no slot is filled,
+# the single base_url (${OLLAMA_URL}) of the provider sections below is used —
+# exactly the previous single-server behaviour.
+ollama:
+  servers:
+    - url: ${OLLAMA_URL_1:-}
+      max_concurrent: ${OLLAMA_MAX_CONCURRENT_1:-}   # empty = unlimited
+    - url: ${OLLAMA_URL_2:-}
+      max_concurrent: ${OLLAMA_MAX_CONCURRENT_2:-}
+    - url: ${OLLAMA_URL_3:-}
+      max_concurrent: ${OLLAMA_MAX_CONCURRENT_3:-}
+    - url: ${OLLAMA_URL_4:-}
+      max_concurrent: ${OLLAMA_MAX_CONCURRENT_4:-}
+    # More servers: add further slots directly in this file.
+  # TCP connect timeout per server attempt — this is what makes failover from a
+  # powered-off machine take seconds instead of minutes.
+  connect_timeout: ${OLLAMA_CONNECT_TIMEOUT:-5.0}
+  # Seconds a failed server is skipped before being probed again.
+  cooldown_seconds: ${OLLAMA_COOLDOWN_SECONDS:-30}
+  # Verify required models on every server at startup.
+  startup_model_check: ${OLLAMA_STARTUP_MODEL_CHECK:-true}
+  # Automatically `ollama pull` missing models (worker startup, blocking).
+  pull_missing_models: ${OLLAMA_PULL_MISSING_MODELS:-true}
+
 llm:
   provider: ${LLM_PROVIDER:-ollama}
   # Optional fallback model (same provider/endpoint) tried by the structured-output
@@ -11,29 +38,64 @@ llm:
   # errors so it can self-correct (retry on type errors).
   max_primary_retries: 3
   max_fallback_retries: 3
-  # Existing-category catalog fed to the categorisation step: in-memory cache TTL and
-  # how many existing category paths to show the model as context (FR-16).
-  category_cache_ttl_seconds: 300.0
-  max_categories_in_prompt: 200
+  # Doc-type classification step: reuse existing types or coin a new one (FR-14).
+  doctype_classification:
+    allow_auto_create: true
+    max_doctypes_in_prompt: 100
+  # LLM folder placement: assign to 1..n folders, optionally creating new ones (FR-16).
+  folder_placement:
+    allow_auto_create: true
+    max_folders_in_prompt: 200
+  # Per-step model overrides (same provider/endpoint, different model name).
+  # Leave a value empty to inherit the global provider model for that step.
+  # Useful for using a large model only where needed (e.g. folder placement)
+  # and a fast/cheap model for lightweight steps (e.g. value extraction).
+  steps:
+    doc_type:
+      model: ${LLM_DOC_TYPE_MODEL:-}
+      fallback_model: ${LLM_DOC_TYPE_FALLBACK_MODEL:-}
+    value_extraction:
+      model: ${LLM_VALUE_EXTRACTION_MODEL:-}
+      fallback_model: ${LLM_VALUE_EXTRACTION_FALLBACK_MODEL:-}
+    summary:
+      model: ${LLM_SUMMARY_MODEL:-}
+      fallback_model: ${LLM_SUMMARY_FALLBACK_MODEL:-}
+    folder_placement:
+      model: ${LLM_FOLDER_PLACEMENT_MODEL:-}
+      fallback_model: ${LLM_FOLDER_PLACEMENT_FALLBACK_MODEL:-}
   providers:
     ollama:
       base_url: ${OLLAMA_URL:-http://ollama:11434}
       model: ${OLLAMA_LLM_MODEL:-llama3.1:8b}
       temperature: 0.0
-      # Cap generation and fail fast on stuck calls (tune for your model/hardware).
-      max_output_tokens: 1024
-      request_timeout: 120.0
+      # Maximum tokens to generate per call.  Empty / unset = no limit (Ollama default).
+      max_output_tokens: ${LLM_MAX_OUTPUT_TOKENS:-}
+      # Per-chunk timeout in seconds when streaming=true (time between consecutive
+      # stream chunks). With streaming enabled, this is NOT the total generation
+      # time — the connection stays alive as long as tokens keep arriving.
+      # Increase for very slow hardware; decrease for fast cloud APIs.
+      request_timeout: 300.0
+      # Enables HTTP SSE streaming. Each received token resets the read timeout,
+      # so slow local models can generate for minutes without a connection kill.
+      # Set to false only if your proxy/load-balancer does not support SSE.
+      streaming: true
     openai:
       api_key: ${OPENAI_API_KEY:-}
       model: ${OPENAI_LLM_MODEL:-gpt-4o-mini}
       base_url: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       temperature: 0.0
+      max_output_tokens: ${LLM_MAX_OUTPUT_TOKENS:-}
+      request_timeout: 300.0
+      streaming: true
     azure:
       api_key: ${AZURE_OPENAI_API_KEY:-}
       endpoint: ${AZURE_OPENAI_ENDPOINT:-}
       api_version: ${AZURE_OPENAI_API_VERSION:-2024-10-21}
       deployment: ${AZURE_OPENAI_LLM_DEPLOYMENT:-}
       temperature: 0.0
+      max_output_tokens: ${LLM_MAX_OUTPUT_TOKENS:-}
+      request_timeout: 300.0
+      streaming: true
 
 embeddings:
   provider: ${EMBEDDINGS_PROVIDER:-ollama}

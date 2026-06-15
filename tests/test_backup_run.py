@@ -8,7 +8,7 @@ from pathlib import Path
 import httpx
 import respx
 
-from docstore.scripts.backup import run_backup
+from saga.scripts.backup import run_backup
 
 BASE_URL = "http://api:8000"
 
@@ -23,8 +23,7 @@ def _document(doc_id: str) -> dict[str, object]:
         "status": "ready",
         "doc_type": "invoice",
         "extracted_values": [],
-        "folder_structure": ["Finance/Invoices"],
-        "category_paths": ["Finance/Invoices"],
+        "primary_folder_path": ["Finance", "Invoices"],
         "content_markdown": f"# {doc_id}",
         "created_at": "2026-06-03T10:00:00Z",
         "updated_at": "2026-06-03T10:00:00Z",

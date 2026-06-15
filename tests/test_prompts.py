@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from docstore.core.errors import ConfigError
-from docstore.llm.prompts import render_prompt
+from saga.core.errors import ConfigError
+from saga.llm.prompts import render_prompt
 
 
 def test_render_replaces_placeholders() -> None:

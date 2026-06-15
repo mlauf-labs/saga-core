@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from docstore.converters.router import ConverterRouter, RoutingConfig
+from saga.converters.router import ConverterRouter, RoutingConfig
 
 
 @pytest.fixture

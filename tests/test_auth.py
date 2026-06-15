@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from docstore.api.auth import verify_bearer_token
-from docstore.core.errors import AuthError
+from saga.api.auth import verify_bearer_token
+from saga.core.errors import AuthError
 
 
 def test_valid_token_passes() -> None:

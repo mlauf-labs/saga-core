@@ -2,13 +2,7 @@
 tool: get_document
 ---
 
-Retrieve a single document by id, including its converted Markdown text and all
-extracted metadata (FR-23).
-
-Parameters:
-- `document_id` (string, required).
-- `include_content` (boolean, optional, default true): include the full Markdown text.
-
-Returns the document record: `document_id`, `title`, `doc_type`, `extracted_values`,
-`folder_structure`, `category_paths`, `status`, timestamps, and (optionally)
-`content_markdown`.
+Fetch a single document by `document_id`. Returns the full record: `title`, `summary`,
+`doc_type`, `extracted_values`, `folders` (membership with the primary marked),
+`notes`, status and timestamps. Set `include_content=false` to omit the converted
+Markdown text. Returns `null` if no document with that id exists.

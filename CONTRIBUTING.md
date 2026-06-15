@@ -1,4 +1,4 @@
-# Contributing to DocStore
+# Contributing to Saga
 
 Thanks for your interest in contributing! This project follows a few conventions to
 keep it maintainable and release-friendly.

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from docstore.chunking import MarkdownChunker
-from docstore.core.config import ChunkingConfig
+from saga.chunking import MarkdownChunker
+from saga.core.config import ChunkingConfig
 
 
 def _word_count(text: str) -> int:

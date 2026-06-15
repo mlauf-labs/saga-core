@@ -34,7 +34,7 @@ generated from the commit history (see `cliff.toml` and the release workflow).
   in-browser preview (default `attachment`, unchanged).
 
 - **llm**: extract document metadata (classification, identifier/value extraction,
-  hierarchical categorisation) with the `llm-structured-output` library — LangChain
+  hierarchical categorisation) with the `saidex` structured-output library — LangChain
   tool-calling into Pydantic schemas with automatic **retry on schema/type errors**
   and an optional **fallback model** (FR-18). The bespoke JSON-parsing LLM adapters
   are replaced by a LangChain chat-model factory (Ollama/OpenAI/Azure); embeddings
@@ -87,7 +87,7 @@ store.
   plus an MCP server (Streamable HTTP, Bearer) exposing `hybrid_search`,
   `get_category_tree`, `list_documents_in_category`, and `get_document` (FR-19..24).
 - **Backup & export**: cursor-paginated export API, binary download, and the
-  `docstore-backup` script writing originals + Markdown + metadata into a directory
+  `saga-backup` script writing originals + Markdown + metadata into a directory
   tree derived from each document's folder structure (FR-28..31).
 
 ### Documentation
@@ -100,4 +100,4 @@ store.
 - GitHub Actions for lint (ruff), strict typing (mypy), tests (pytest, ≥80% coverage),
   image build, and changelog-based releases.
 
-[1.0.0]: https://github.com/OWNER/docstore/releases/tag/v1.0.0
+[1.0.0]: https://github.com/mlauf-labs/saga-core/releases/tag/v1.0.0

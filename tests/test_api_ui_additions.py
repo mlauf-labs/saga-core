@@ -1,40 +1,13 @@
-"""API tests for UI-facing additions: CORS, document search, metadata PATCH, file disposition."""
+"""API tests for UI-facing behaviour: CORS, document search, PATCH, file disposition."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 from fastapi.testclient import TestClient
 
-from docstore.api.dependencies import Services
-from docstore.core.models import Document, DocumentStatus, ExtractedValue
-
-
-def _seed(services: Services, **overrides: object) -> Document:
-    now = datetime.now(UTC)
-    defaults: dict[str, object] = {
-        "document_id": "d1",
-        "title": "Invoice 2026.pdf",
-        "mime_type": "application/pdf",
-        "size_bytes": 10,
-        "content_hash": "h1",
-        "minio_object": "b/d1",
-        "status": DocumentStatus.READY,
-        "doc_type": "invoice",
-        "content_markdown": "Annual liability premium",
-        "extracted_values": [
-            ExtractedValue(key="invoice_number", type="identifier", value="INV-1")
-        ],
-        "category_paths": ["Finance/Invoices"],
-        "folder_structure": ["Finance/Invoices"],
-        "created_at": now,
-        "updated_at": now,
-    }
-    defaults.update(overrides)
-    doc = Document.model_validate(defaults)
-    services.opensearch.docs[doc.document_id] = doc  # type: ignore[attr-defined]
-    return doc
-
+from saga.api.dependencies import Services
+from saga.core.models import DocumentStatus
+from saga.storage.postgres import PostgresStore
+from tests.conftest import seed_document
 
 # --- CORS ---
 
@@ -63,21 +36,23 @@ def test_document_search_requires_auth(client: TestClient) -> None:
     assert client.post("/documents/search", json={"query": "x"}).status_code == 401
 
 
-def test_document_search_by_query(
-    client: TestClient, auth_headers: dict[str, str], services: Services
+async def test_document_search_by_query(
+    client: TestClient, auth_headers: dict[str, str], db: PostgresStore
 ) -> None:
-    _seed(services)
-    response = client.post("/documents/search", json={"query": "liability"}, headers=auth_headers)
+    doc = await seed_document(db, title="Invoice 2026.pdf", content="annual liability premium")
+    response = client.post(
+        "/documents/search", json={"query": "liability"}, headers=auth_headers
+    )
     assert response.status_code == 200
     body = response.json()
     assert body["total"] == 1
-    assert body["items"][0]["document_id"] == "d1"
+    assert body["items"][0]["document_id"] == doc.document_id
 
 
-def test_document_search_filter_by_title(
-    client: TestClient, auth_headers: dict[str, str], services: Services
+async def test_document_search_filter_by_title(
+    client: TestClient, auth_headers: dict[str, str], db: PostgresStore
 ) -> None:
-    _seed(services)
+    await seed_document(db, title="Invoice 2026.pdf", content="x")
     hit = client.post(
         "/documents/search", json={"title": "Invoice 2026.pdf"}, headers=auth_headers
     ).json()
@@ -88,56 +63,60 @@ def test_document_search_filter_by_title(
     assert miss["total"] == 0
 
 
-def test_document_search_filter_by_category(
-    client: TestClient, auth_headers: dict[str, str], services: Services
+async def test_document_search_filter_by_folder(
+    client: TestClient, auth_headers: dict[str, str], db: PostgresStore
 ) -> None:
-    _seed(services)
+    folder = await db.create_folder(name="Finance")
+    doc = await seed_document(db, title="a.pdf", content="x")
+    await db.add_document_folder(doc.document_id, folder.folder_id, primary=True)
     body = client.post(
-        "/documents/search", json={"category_path": "Finance"}, headers=auth_headers
+        "/documents/search", json={"folder_id": folder.folder_id}, headers=auth_headers
     ).json()
     assert body["total"] == 1
+    assert body["items"][0]["document_id"] == doc.document_id
 
 
-# --- Metadata PATCH ---
+# --- PATCH editable fields ---
 
 
-def test_patch_metadata_updates_fields(
-    client: TestClient, auth_headers: dict[str, str], services: Services
+async def test_patch_document_updates_fields(
+    client: TestClient, auth_headers: dict[str, str], db: PostgresStore
 ) -> None:
-    _seed(services)
+    doc = await seed_document(db, title="Invoice 2026.pdf", content="x", summary="old summary")
+    doc_type = await db.create_doc_type(name="contract")
     response = client.patch(
-        "/documents/d1/metadata",
-        json={"doc_type": "contract", "category_paths": ["Legal/Contracts"]},
+        f"/documents/{doc.document_id}",
+        json={"summary": "new summary", "doc_type_id": doc_type.doc_type_id},
         headers=auth_headers,
     )
     assert response.status_code == 200
     body = response.json()
+    assert body["summary"] == "new summary"
     assert body["doc_type"] == "contract"
-    assert body["category_paths"] == ["Legal/Contracts"]
-    # Unspecified field unchanged.
-    assert body["folder_structure"] == ["Finance/Invoices"]
+    # Untouched field stays.
+    assert body["title"] == "Invoice 2026.pdf"
 
 
-def test_patch_metadata_empty_rejected(
-    client: TestClient, auth_headers: dict[str, str], services: Services
+async def test_patch_document_empty_rejected(
+    client: TestClient, auth_headers: dict[str, str], db: PostgresStore
 ) -> None:
-    _seed(services)
-    response = client.patch("/documents/d1/metadata", json={}, headers=auth_headers)
+    doc = await seed_document(db)
+    response = client.patch(f"/documents/{doc.document_id}", json={}, headers=auth_headers)
     assert response.status_code == 400
     assert response.json()["code"] == "validation_error"
 
 
-def test_patch_metadata_missing_document_404(
+def test_patch_document_missing_404(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
     response = client.patch(
-        "/documents/nope/metadata", json={"doc_type": "x"}, headers=auth_headers
+        "/documents/nope", json={"summary": "x"}, headers=auth_headers
     )
     assert response.status_code == 404
 
 
-def test_patch_metadata_requires_auth(client: TestClient) -> None:
-    assert client.patch("/documents/d1/metadata", json={"doc_type": "x"}).status_code == 401
+def test_patch_document_requires_auth(client: TestClient) -> None:
+    assert client.patch("/documents/d1", json={"summary": "x"}).status_code == 401
 
 
 # --- Reanalyze ---
@@ -147,18 +126,19 @@ def test_reanalyze_requires_auth(client: TestClient) -> None:
     assert client.post("/documents/d1/reanalyze").status_code == 401
 
 
-def test_reanalyze_enqueues_and_sets_pending(
-    client: TestClient, auth_headers: dict[str, str], services: Services
+async def test_reanalyze_enqueues_and_sets_pending(
+    client: TestClient, auth_headers: dict[str, str], services: Services, db: PostgresStore
 ) -> None:
-    _seed(services)
-    response = client.post("/documents/d1/reanalyze", headers=auth_headers)
+    doc = await seed_document(db)
+    response = client.post(f"/documents/{doc.document_id}/reanalyze", headers=auth_headers)
     assert response.status_code == 202
     body = response.json()
-    assert body["document_id"] == "d1"
+    assert body["document_id"] == doc.document_id
     assert body["status"] == "pending"
-    # Ingestion job re-enqueued and the stored status reset to pending.
-    assert services.queue.jobs == [("ingest_document", ("d1",))]  # type: ignore[attr-defined]
-    assert services.opensearch.docs["d1"].status.value == "pending"  # type: ignore[attr-defined]
+    assert services.queue.jobs == [("ingest_document", (doc.document_id,))]  # type: ignore[attr-defined]
+    refreshed = await db.get_document(doc.document_id)
+    assert refreshed is not None
+    assert refreshed.status is DocumentStatus.PENDING
 
 
 def test_reanalyze_missing_document_404(client: TestClient, auth_headers: dict[str, str]) -> None:
@@ -168,30 +148,33 @@ def test_reanalyze_missing_document_404(client: TestClient, auth_headers: dict[s
 # --- File disposition ---
 
 
-def test_file_default_attachment(
-    client: TestClient, auth_headers: dict[str, str], services: Services
+async def test_file_default_attachment(
+    client: TestClient, auth_headers: dict[str, str], services: Services, db: PostgresStore
 ) -> None:
-    _seed(services)
-    services.minio.objects["d1"] = b"PDFDATA"  # type: ignore[attr-defined]
-    response = client.get("/documents/d1/file", headers=auth_headers)
+    doc = await seed_document(db)
+    services.minio.objects[doc.document_id] = b"PDFDATA"  # type: ignore[attr-defined]
+    response = client.get(f"/documents/{doc.document_id}/file", headers=auth_headers)
     assert response.status_code == 200
     assert response.headers["content-disposition"].startswith("attachment")
 
 
-def test_file_inline_disposition(
-    client: TestClient, auth_headers: dict[str, str], services: Services
+async def test_file_inline_disposition(
+    client: TestClient, auth_headers: dict[str, str], services: Services, db: PostgresStore
 ) -> None:
-    _seed(services)
-    services.minio.objects["d1"] = b"PDFDATA"  # type: ignore[attr-defined]
-    response = client.get("/documents/d1/file?disposition=inline", headers=auth_headers)
+    doc = await seed_document(db)
+    services.minio.objects[doc.document_id] = b"PDFDATA"  # type: ignore[attr-defined]
+    response = client.get(
+        f"/documents/{doc.document_id}/file?disposition=inline", headers=auth_headers
+    )
     assert response.status_code == 200
     assert response.headers["content-disposition"].startswith("inline")
 
 
-def test_file_invalid_disposition_422(
-    client: TestClient, auth_headers: dict[str, str], services: Services
+async def test_file_invalid_disposition_422(
+    client: TestClient, auth_headers: dict[str, str], db: PostgresStore
 ) -> None:
-    _seed(services)
-    services.minio.objects["d1"] = b"PDFDATA"  # type: ignore[attr-defined]
-    response = client.get("/documents/d1/file?disposition=bogus", headers=auth_headers)
+    doc = await seed_document(db)
+    response = client.get(
+        f"/documents/{doc.document_id}/file?disposition=bogus", headers=auth_headers
+    )
     assert response.status_code == 422

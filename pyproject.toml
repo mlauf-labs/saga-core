@@ -1,11 +1,11 @@
 [project]
-name = "docstore"
+name = "saga"
 version = "1.0.0"
 description = "A document store for RAG agents: ingest, convert, enrich, index, and hybrid-search any document."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
-authors = [{ name = "DocStore contributors" }]
+authors = [{ name = "Saga contributors" }]
 keywords = ["rag", "documents", "opensearch", "mcp", "docling", "kreuzberg", "vector-search"]
 
 # NOTE: floors are conservative; `uv lock` pins the latest compatible versions.
@@ -32,8 +32,14 @@ dependencies = [
     "ollama>=0.4",
     # Structured, validated metadata extraction with automatic retry on type errors.
     # Ollama is used via its OpenAI-compatible endpoint, so only langchain-openai is needed.
-    "llm-structured-output",
+    "saidex>=0.2.0",
     "langchain-openai>=0.2",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.30",
+    "alembic>=1.13",
+    "greenlet>=3.0",
+    "langfuse>=4.7.1",
+    "langchain>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -41,10 +47,10 @@ dependencies = [
 azure = ["openai>=1.50"]
 
 [project.scripts]
-docstore-api = "docstore.api.__main__:main"
-docstore-worker = "docstore.pipeline.__main__:main"
-docstore-mcp = "docstore.mcp.__main__:main"
-docstore-backup = "docstore.scripts.backup:main"
+saga-api = "saga.api.__main__:main"
+saga-worker = "saga.pipeline.__main__:main"
+saga-mcp = "saga.mcp.__main__:main"
+saga-backup = "saga.scripts.backup:main"
 
 [dependency-groups]
 dev = [
@@ -56,6 +62,7 @@ dev = [
     "respx>=0.21",
     "types-pyyaml>=6.0",
     "pre-commit>=4.0",
+    "aiosqlite>=0.20",
 ]
 
 [build-system]
@@ -63,12 +70,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/docstore"]
-
-# Local source for the structured-output library (sibling checkout).
-# For a public release this should be replaced with a published version.
-[tool.uv.sources]
-llm-structured-output = { path = "../structured_output", editable = true }
+packages = ["src/saga"]
 
 # ---------------------------------------------------------------------------
 # Tooling
@@ -84,7 +86,7 @@ select = ["E", "F", "I", "UP", "B", "C4", "SIM", "TC", "RUF", "ANN", "ASYNC"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["ANN", "S101", "TC"]
 # The backup script is a sequential CLI tool; blocking filesystem IO is intentional.
-"src/docstore/scripts/backup.py" = ["ASYNC240"]
+"src/saga/scripts/backup.py" = ["ASYNC240"]
 
 [tool.ruff.lint.flake8-type-checking]
 # Pydantic evaluates annotations at runtime, so don't push their imports into
@@ -107,12 +109,12 @@ module = ["opensearchpy.*", "minio.*", "arq.*", "ollama.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-addopts = "-ra --strict-markers --cov=docstore --cov-report=term-missing"
+addopts = "-ra --strict-markers --cov=saga --cov-report=term-missing"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 
 [tool.coverage.run]
-source = ["docstore"]
+source = ["saga"]
 # Modules below are typed placeholders implemented in later phases (see
 # docs/planning/implementation-plan.md). Remove each entry when its phase lands so
 # the >=80% gate (NFR-23) applies to the new code.

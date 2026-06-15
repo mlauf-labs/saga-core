@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 import pytest
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from docstore.llm import callbacks as callbacks_module
-from docstore.llm.callbacks import LlmCallLogger
+from saga.llm import callbacks as callbacks_module
+from saga.llm.callbacks import LlmCallLogger
 
 
 @pytest.fixture

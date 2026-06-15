@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from docstore.converters import load_converters_config
-from docstore.converters.config import ConvertersConfig, ServiceConfig
-from docstore.converters.registry import ConverterRegistry
-from docstore.converters.router import RoutingConfig
-from docstore.core.errors import ConfigError
+from saga.converters import load_converters_config
+from saga.converters.config import ConvertersConfig, ServiceConfig
+from saga.converters.registry import ConverterRegistry
+from saga.converters.router import RoutingConfig
+from saga.core.errors import ConfigError
 
 
 def test_load_converters_config_from_repo() -> None:

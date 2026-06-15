@@ -1,6 +1,6 @@
 # Non-Functional Requirements
 
-> Status: Draft v1 · Project: **DocStore**
+> Status: Draft v1 · Project: **Saga**
 
 These requirements describe **how well** the system must behave: quality
 attributes, constraints, and engineering standards.
@@ -25,11 +25,13 @@ attributes, constraints, and engineering standards.
 
 - **NFR-6 Containerised** — Every component runs in a container; a single
   **`docker compose`** brings up the **entire** stack: API, MCP server, worker,
-  Docling, Kreuzberg, OpenSearch (+ Dashboards), MinIO, Redis, (Ollama optional).
+  Docling, Kreuzberg, OpenSearch (+ Dashboards), Postgres, MinIO, Redis,
+  (Ollama optional).
 - **NFR-7 Service boundaries** — Docling and Kreuzberg run as **separate services**
   consumed only over their HTTP APIs (no in-process coupling).
 - **NFR-8 Stateless app tier** — API/MCP/worker processes are stateless; all state
-  lives in OpenSearch, MinIO, and Redis so the app tier can scale horizontally.
+  lives in Postgres (system of record), OpenSearch (search projection), MinIO, and
+  Redis so the app tier can scale horizontally.
 - **NFR-9 Configurability** — Behaviour is driven by YAML config + env overrides; no
   hard-coded endpoints, models, or limits.
 
@@ -114,7 +116,8 @@ attributes, constraints, and engineering standards.
 ## 8. Maintainability
 
 - **NFR-33 Modular structure** — Clear separation: API, MCP, pipeline/worker,
-  converters, llm, embeddings, storage (opensearch/minio), chunking, config, logging.
+  converters, llm, embeddings, storage (postgres/opensearch/minio), search, chunking,
+  config, logging.
 - **NFR-34 Provider abstraction** — LLM/embedding/converter integrations sit behind
   interfaces so providers can be swapped via config.
 - **NFR-35 Reproducibility** — Pinned lockfile + pinned image tags ensure

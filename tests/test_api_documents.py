@@ -5,7 +5,8 @@ from __future__ import annotations
 import httpx
 from fastapi.testclient import TestClient
 
-from docstore.api.dependencies import Services
+from saga.api.dependencies import Services
+from saga.storage.postgres import PostgresStore
 
 
 def _upload(
@@ -90,15 +91,16 @@ def test_delete_missing_404(client: TestClient, auth_headers: dict[str, str]) ->
     assert client.delete("/documents/nope", headers=auth_headers).status_code == 404
 
 
-def test_dedup_replace_keeps_single_document(
-    client: TestClient, auth_headers: dict[str, str], services: Services
+async def test_dedup_replace_keeps_single_document(
+    client: TestClient, auth_headers: dict[str, str], db: PostgresStore
 ) -> None:
     # Default dedup policy is "replace".
     first = _upload(client, auth_headers, content=b"same").json()["document_id"]
     second = _upload(client, auth_headers, content=b"same").json()["document_id"]
     assert first != second
-    assert len(services.opensearch.docs) == 1  # type: ignore[attr-defined]
-    assert second in services.opensearch.docs  # type: ignore[attr-defined]
+    documents, total = await db.list_documents(page=1, page_size=10)
+    assert total == 1
+    assert {d.document_id for d in documents} == {second}
 
 
 def test_dedup_reject(client: TestClient, auth_headers: dict[str, str], services: Services) -> None:
@@ -109,8 +111,8 @@ def test_dedup_reject(client: TestClient, auth_headers: dict[str, str], services
     assert response.json()["code"] == "conflict"
 
 
-def test_replace_document_keeps_id(
-    client: TestClient, auth_headers: dict[str, str], services: Services
+async def test_replace_document_keeps_id(
+    client: TestClient, auth_headers: dict[str, str], db: PostgresStore
 ) -> None:
     document_id = _upload(client, auth_headers, content=b"v1").json()["document_id"]
     response = client.put(
@@ -120,5 +122,6 @@ def test_replace_document_keeps_id(
     )
     assert response.status_code == 202
     assert response.json()["document_id"] == document_id
-    stored = services.opensearch.docs[document_id]  # type: ignore[attr-defined]
+    stored = await db.get_document(document_id)
+    assert stored is not None
     assert stored.content_hash != ""

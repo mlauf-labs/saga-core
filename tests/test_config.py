@@ -4,24 +4,24 @@ from __future__ import annotations
 
 import pytest
 
-from docstore.core.config import ApiConfig, _resolve_env
-from docstore.core.errors import ConfigError
+from saga.core.config import ApiConfig, _resolve_env
+from saga.core.errors import ConfigError
 
 
 def test_resolve_env_uses_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DOCSTORE_TEST_VAR", "hello")
-    assert _resolve_env("${DOCSTORE_TEST_VAR}") == "hello"
+    monkeypatch.setenv("SAGA_TEST_VAR", "hello")
+    assert _resolve_env("${SAGA_TEST_VAR}") == "hello"
 
 
 def test_resolve_env_uses_default_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("DOCSTORE_MISSING", raising=False)
-    assert _resolve_env("${DOCSTORE_MISSING:-fallback}") == "fallback"
+    monkeypatch.delenv("SAGA_MISSING", raising=False)
+    assert _resolve_env("${SAGA_MISSING:-fallback}") == "fallback"
 
 
 def test_resolve_env_raises_when_required_and_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("DOCSTORE_REQUIRED", raising=False)
+    monkeypatch.delenv("SAGA_REQUIRED", raising=False)
     with pytest.raises(ConfigError):
-        _resolve_env("${DOCSTORE_REQUIRED}")
+        _resolve_env("${SAGA_REQUIRED}")
 
 
 def test_resolve_env_mixed_text(monkeypatch: pytest.MonkeyPatch) -> None:

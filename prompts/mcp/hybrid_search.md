@@ -2,22 +2,25 @@
 tool: hybrid_search
 ---
 
-Search the document store using **hybrid retrieval** (keyword/BM25 + semantic vector
-search combined and re-ranked). Use this to find passages relevant to a question
-across all stored documents.
+Search the document store with a **fused hybrid query**. Provide a `keyword_query`, a
+`semantic_query`, or both — at least one is required.
 
-Parameters:
-- `query` (string, required): natural-language query or keywords.
-- `top_k` (integer, optional): number of snippets to return (bounded by server max).
-- `doc_type` (string, optional): restrict to a document type (e.g. `invoice`).
-- `category_path` (string, optional): restrict to a category subtree
-  (e.g. `Insurance/Health`).
-- `title` (string, optional): restrict to an exact document title.
-- `filters` (object, optional): match extracted values, e.g.
-  `{ "invoice_number": "12345" }`.
+- `keyword_query`: OpenSearch `query_string` over documents (title, summary, content,
+  doc_type). Supports `AND`/`OR`/`NOT`, grouping `()`, `field:value`, quoted phrases,
+  and `*`/`?` wildcards, e.g. `title:Rechnung AND 2024`.
+- `semantic_query`: a plain natural-language question matched by meaning over document
+  passages, e.g. `Wie hoch ist die monatliche Miete?`.
 
-The query also matches document titles in addition to passage text.
+The two rankings are merged with Reciprocal Rank Fusion into a **single ranked list**
+of documents (no more separate keyword/semantic lists).
 
-Returns a ranked list of snippets. Each result includes the snippet text, a relevance
-score, and a reference to the parent document (`document_id`, `title`, `doc_type`,
-`category_paths`). Use `get_document` to retrieve the full document.
+Optional filters narrow the search:
+- `doc_type`: restrict to a document type, e.g. `invoice`.
+- `folder_id`: restrict to a folder; by default the whole subtree is included. Set
+  `include_subtree=false` to match only that exact folder.
+- `title`, `status`, `created_from`/`created_to` (ISO dates), `top_k`.
+- `filters` (object): match extracted values, e.g. `{ "invoice_number": "12345" }`.
+
+Returns `{ "results": [...] }`, each item with `document_id`, `title`, `score`,
+`doc_type`, `summary`, `folder_ids` and the best matching `snippet`. Use `get_document`
+to fetch a full document.

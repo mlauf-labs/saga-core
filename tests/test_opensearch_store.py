@@ -1,4 +1,10 @@
-"""Unit tests for the OpenSearch store using a mocked async client."""
+"""Unit tests for the OpenSearch search-projection store using a fake async client.
+
+OpenSearch is now a derived, rebuildable projection (no longer the system of record),
+so the store only exposes bootstrap/projection/search operations. The fake client
+records every request and returns canned responses so the store's request building and
+response parsing can be exercised without a cluster.
+"""
 
 from __future__ import annotations
 
@@ -8,15 +14,21 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from docstore.core.config import OpenSearchConfig
-from docstore.core.errors import NotFoundError, StorageError
-from docstore.core.models import Chunk, Document, DocumentStatus
-from docstore.storage import opensearch as os_module
-from docstore.storage.opensearch import OpenSearchStore, _parse_hosts
+from saga.core.config import OpenSearchConfig
+from saga.core.errors import StorageError
+from saga.core.models import (
+    Chunk,
+    Document,
+    DocumentStatus,
+    ExtractedValue,
+    FolderRef,
+)
+from saga.storage import opensearch as os_module
+from saga.storage.opensearch import OpenSearchStore, _parse_hosts
 
 
 def _make_document() -> Document:
-    now = datetime.now(UTC)
+    now = datetime(2024, 1, 2, 3, 4, 5, tzinfo=UTC)
     return Document(
         document_id="d1",
         title="Invoice.pdf",
@@ -24,28 +36,41 @@ def _make_document() -> Document:
         size_bytes=10,
         content_hash="h",
         minio_object="b/d1",
+        content_markdown="# Invoice",
+        doc_type="invoice",
+        summary="An invoice for 2024.",
+        extracted_values=[
+            ExtractedValue(key="amount", type="amount", value="100,00", normalized="100.00")
+        ],
+        folders=[
+            FolderRef(folder_id="f-finance", name="Finance", is_primary=True),
+            FolderRef(folder_id="f-invoices", name="Invoices"),
+        ],
+        status=DocumentStatus.READY,
         created_at=now,
         updated_at=now,
     )
+
+
+def _compatible_mapping(index: str, **_: Any) -> dict[str, Any]:
+    """Return a mapping where the required kNN fields are correctly typed."""
+    field = "embedding" if "chunk" in index else "summary_embedding"
+    return {index: {"mappings": {"properties": {field: {"type": "knn_vector"}}}}}
 
 
 @pytest.fixture
 def fake_client() -> MagicMock:
     client = MagicMock()
     client.index = AsyncMock()
-    client.get = AsyncMock()
-    client.update = AsyncMock()
     client.delete = AsyncMock()
     client.delete_by_query = AsyncMock()
     client.search = AsyncMock()
     client.close = AsyncMock()
-    client.update_by_query = AsyncMock()
     client.indices = MagicMock()
     client.indices.exists = AsyncMock(return_value=False)
     client.indices.create = AsyncMock()
-    client.indices.put_mapping = AsyncMock()
-    client.transport = MagicMock()
-    client.transport.perform_request = AsyncMock()
+    client.indices.delete = AsyncMock()
+    client.indices.get_mapping = AsyncMock(side_effect=_compatible_mapping)
     return client
 
 
@@ -54,10 +79,20 @@ def store(fake_client: MagicMock) -> OpenSearchStore:
     return OpenSearchStore(OpenSearchConfig(), client=fake_client)
 
 
+# --------------------------------------------------------------------------- #
+# Host parsing & lazy client                                                    #
+# --------------------------------------------------------------------------- #
+
+
 def test_parse_hosts_variants() -> None:
     hosts = _parse_hosts("http://opensearch:9200, https://node2:9201")
     assert hosts[0] == {"host": "opensearch", "port": 9200, "use_ssl": False}
-    assert hosts[1]["use_ssl"] is True
+    assert hosts[1] == {"host": "node2", "port": 9201, "use_ssl": True}
+
+
+def test_parse_hosts_defaults_scheme_and_port() -> None:
+    hosts = _parse_hosts("opensearch")
+    assert hosts[0] == {"host": "opensearch", "port": 9200, "use_ssl": False}
 
 
 def test_parse_hosts_empty_raises() -> None:
@@ -65,54 +100,138 @@ def test_parse_hosts_empty_raises() -> None:
         _parse_hosts("  ,  ")
 
 
-async def test_bootstrap_creates_indices_and_pipeline(
+def test_client_lazy_build() -> None:
+    cfg = OpenSearchConfig(hosts="http://localhost:9200", password="")
+    store = OpenSearchStore(cfg)
+    client: Any = store.client
+    assert client is not None
+
+
+# --------------------------------------------------------------------------- #
+# bootstrap                                                                     #
+# --------------------------------------------------------------------------- #
+
+
+async def test_bootstrap_creates_both_indices(
     store: OpenSearchStore, fake_client: MagicMock
 ) -> None:
     await store.bootstrap()
     assert fake_client.indices.create.await_count == 2
-    fake_client.transport.perform_request.assert_awaited_once()
+    created = {call.kwargs["index"] for call in fake_client.indices.create.await_args_list}
+    assert created == {store._config.document_index, store._config.chunk_index}
 
 
-async def test_index_document(store: OpenSearchStore, fake_client: MagicMock) -> None:
-    await store.index_document(_make_document())
-    fake_client.index.assert_awaited_once()
-    assert fake_client.index.await_args.kwargs["id"] == "d1"
-
-
-async def test_get_document_found(store: OpenSearchStore, fake_client: MagicMock) -> None:
-    fake_client.get.return_value = {"_source": _make_document().model_dump(mode="json")}
-    doc = await store.get_document("d1")
-    assert doc is not None
-    assert doc.document_id == "d1"
-
-
-async def test_get_document_missing_returns_none(
+async def test_bootstrap_skips_existing_compatible_indices(
     store: OpenSearchStore, fake_client: MagicMock
 ) -> None:
-    err = Exception("not found")
-    err.status_code = 404  # type: ignore[attr-defined]
-    fake_client.get.side_effect = err
-    assert await store.get_document("missing") is None
+    fake_client.indices.exists = AsyncMock(return_value=True)
+    await store.bootstrap()
+    fake_client.indices.create.assert_not_awaited()
+    fake_client.indices.delete.assert_not_awaited()
 
 
-async def test_get_document_other_error_raises(
+async def test_bootstrap_recreates_index_missing_knn_field(
     store: OpenSearchStore, fake_client: MagicMock
 ) -> None:
-    fake_client.get.side_effect = Exception("boom")
+    # The documents index exists but has no knn_vector summary_embedding (stale mapping).
+    fake_client.indices.exists = AsyncMock(return_value=True)
+
+    def _mapping(index: str, **_: Any) -> dict[str, Any]:
+        if index == store._config.document_index:
+            return {index: {"mappings": {"properties": {"summary_embedding": {"type": "float"}}}}}
+        return _compatible_mapping(index)
+
+    fake_client.indices.get_mapping = AsyncMock(side_effect=_mapping)
+    await store.bootstrap()
+    # The incompatible documents index is dropped and recreated; the chunk index is kept.
+    fake_client.indices.delete.assert_awaited_once()
+    assert fake_client.indices.delete.await_args.kwargs["index"] == store._config.document_index
+    fake_client.indices.create.assert_awaited_once()
+    assert fake_client.indices.create.await_args.kwargs["index"] == store._config.document_index
+
+
+async def test_bootstrap_wraps_errors(store: OpenSearchStore, fake_client: MagicMock) -> None:
+    fake_client.indices.exists.side_effect = Exception("boom")
     with pytest.raises(StorageError):
-        await store.get_document("d1")
+        await store.bootstrap()
 
 
-async def test_update_status(store: OpenSearchStore, fake_client: MagicMock) -> None:
-    await store.update_status("d1", DocumentStatus.READY)
-    body = fake_client.update.await_args.kwargs["body"]
-    assert body["doc"]["status"] == "ready"
+# --------------------------------------------------------------------------- #
+# project_document                                                              #
+# --------------------------------------------------------------------------- #
 
 
-async def test_delete_document_cascades(store: OpenSearchStore, fake_client: MagicMock) -> None:
+async def test_project_document_indexes_expected_body(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    document = _make_document()
+    await store.project_document(
+        document,
+        folder_ancestor_ids=["f-finance", "f-invoices", "f-root"],
+        summary_embedding=[0.1, 0.2, 0.3],
+    )
+    fake_client.index.assert_awaited_once()
+    kwargs = fake_client.index.await_args.kwargs
+    assert kwargs["index"] == store._config.document_index
+    assert kwargs["id"] == "d1"
+    assert kwargs["refresh"] is True
+    body = kwargs["body"]
+    assert body["document_id"] == "d1"
+    assert body["summary"] == "An invoice for 2024."
+    assert body["folder_ids"] == ["f-finance", "f-invoices"]
+    assert body["folder_ancestor_ids"] == ["f-finance", "f-invoices", "f-root"]
+    assert body["primary_folder_id"] == "f-finance"
+    assert body["summary_embedding"] == [0.1, 0.2, 0.3]
+    assert body["status"] == "ready"
+    # value_terms are denormalised from the extracted values (raw + normalized).
+    assert "amount=100,00" in body["value_terms"]
+    assert "amount=100.00" in body["value_terms"]
+
+
+async def test_project_document_omits_embedding_when_absent(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    await store.project_document(_make_document(), folder_ancestor_ids=["f-finance"])
+    body = fake_client.index.await_args.kwargs["body"]
+    assert "summary_embedding" not in body
+
+
+async def test_project_document_wraps_errors(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    fake_client.index.side_effect = Exception("boom")
+    with pytest.raises(StorageError):
+        await store.project_document(_make_document(), folder_ancestor_ids=[])
+
+
+# --------------------------------------------------------------------------- #
+# delete_document                                                               #
+# --------------------------------------------------------------------------- #
+
+
+async def test_delete_document_cascades_to_chunks(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
     await store.delete_document("d1")
     fake_client.delete_by_query.assert_awaited_once()
+    dbq = fake_client.delete_by_query.await_args.kwargs
+    assert dbq["index"] == store._config.chunk_index
+    assert dbq["body"]["query"]["term"]["document_id"] == "d1"
     fake_client.delete.assert_awaited_once()
+    delete_kwargs = fake_client.delete.await_args.kwargs
+    assert delete_kwargs["index"] == store._config.document_index
+    assert delete_kwargs["id"] == "d1"
+
+
+async def test_delete_document_wraps_errors(store: OpenSearchStore, fake_client: MagicMock) -> None:
+    fake_client.delete_by_query.side_effect = Exception("boom")
+    with pytest.raises(StorageError):
+        await store.delete_document("d1")
+
+
+# --------------------------------------------------------------------------- #
+# index_chunks / delete_chunks                                                  #
+# --------------------------------------------------------------------------- #
 
 
 async def test_index_chunks(store: OpenSearchStore, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -123,219 +242,11 @@ async def test_index_chunks(store: OpenSearchStore, monkeypatch: pytest.MonkeyPa
         Chunk(chunk_id="d1:1", document_id="d1", ordinal=1, snippet="b", embedding=[0.2]),
     ]
     assert await store.index_chunks(chunks) == 2
+    bulk.assert_awaited_once()
 
 
 async def test_index_chunks_empty(store: OpenSearchStore) -> None:
     assert await store.index_chunks([]) == 0
-
-
-async def test_hybrid_search_parses_hits(store: OpenSearchStore, fake_client: MagicMock) -> None:
-    fake_client.search.return_value = {
-        "hits": {
-            "hits": [
-                {
-                    "_id": "d1:0",
-                    "_score": 1.5,
-                    "_source": {
-                        "document_id": "d1",
-                        "chunk_id": "d1:0",
-                        "snippet": "hello",
-                        "title": "Invoice.pdf",
-                        "doc_type": "invoice",
-                        "category_paths": ["Finance"],
-                    },
-                }
-            ]
-        }
-    }
-    hits = await store.hybrid_search(query_text="hi", query_vector=[0.1], top_k=5)
-    assert len(hits) == 1
-    assert hits[0].document_id == "d1"
-    assert hits[0].score == 1.5
-
-
-async def test_update_content(store: OpenSearchStore, fake_client: MagicMock) -> None:
-    await store.update_content("d1", "# Markdown")
-    body = fake_client.update.await_args.kwargs["body"]
-    assert body["doc"]["content_markdown"] == "# Markdown"
-
-
-async def test_update_metadata(store: OpenSearchStore, fake_client: MagicMock) -> None:
-    from docstore.core.models import ExtractedValue
-
-    await store.update_metadata(
-        "d1",
-        doc_type="invoice",
-        extracted_values=[ExtractedValue(key="n", type="identifier", value="1")],
-        folder_structure=["Finance/Invoices"],
-        category_paths=["Finance/Invoices"],
-    )
-    body = fake_client.update.await_args.kwargs["body"]
-    assert body["doc"]["doc_type"] == "invoice"
-    assert body["doc"]["extracted_values"][0]["key"] == "n"
-    assert body["doc"]["folder_structure"] == ["Finance/Invoices"]
-
-
-async def test_find_by_hash_found(store: OpenSearchStore, fake_client: MagicMock) -> None:
-    fake_client.search.return_value = {
-        "hits": {"hits": [{"_source": _make_document().model_dump(mode="json")}]}
-    }
-    found = await store.find_by_hash("h")
-    assert found is not None
-    assert found.document_id == "d1"
-
-
-async def test_find_by_hash_none(store: OpenSearchStore, fake_client: MagicMock) -> None:
-    fake_client.search.return_value = {"hits": {"hits": []}}
-    assert await store.find_by_hash("nope") is None
-
-
-async def test_list_documents_total_dict(store: OpenSearchStore, fake_client: MagicMock) -> None:
-    fake_client.search.return_value = {
-        "hits": {
-            "total": {"value": 5},
-            "hits": [{"_source": _make_document().model_dump(mode="json")}],
-        }
-    }
-    docs, total = await store.list_documents(page=1, page_size=10)
-    assert total == 5
-    assert len(docs) == 1
-
-
-async def test_list_documents_total_int(store: OpenSearchStore, fake_client: MagicMock) -> None:
-    fake_client.search.return_value = {"hits": {"total": 2, "hits": []}}
-    docs, total = await store.list_documents(page=2, page_size=10)
-    assert total == 2
-    assert docs == []
-
-
-async def test_scroll_documents_returns_cursor(
-    store: OpenSearchStore, fake_client: MagicMock
-) -> None:
-    source = _make_document().model_dump(mode="json")
-    fake_client.search.return_value = {"hits": {"hits": [{"_source": source, "sort": [123, "d1"]}]}}
-    docs, cursor = await store.scroll_documents(page_size=1)
-    assert len(docs) == 1
-    # Full page (size==1) -> a cursor is returned for the next page.
-    assert cursor == [123, "d1"]
-
-
-async def test_scroll_documents_last_page_no_cursor(
-    store: OpenSearchStore, fake_client: MagicMock
-) -> None:
-    source = _make_document().model_dump(mode="json")
-    fake_client.search.return_value = {"hits": {"hits": [{"_source": source, "sort": [123, "d1"]}]}}
-    docs, cursor = await store.scroll_documents(page_size=10, search_after=[1, "a"])
-    assert len(docs) == 1
-    assert cursor is None
-    assert fake_client.search.await_args.kwargs["body"]["search_after"] == [1, "a"]
-
-
-async def test_category_terms(store: OpenSearchStore, fake_client: MagicMock) -> None:
-    fake_client.search.return_value = {
-        "aggregations": {
-            "paths": {
-                "buckets": [
-                    {"key": "Finance/Invoices", "doc_count": 3},
-                    {"key": "Insurance", "doc_count": 1},
-                ]
-            }
-        }
-    }
-    terms = await store.category_terms()
-    assert terms == [("Finance/Invoices", 3), ("Insurance", 1)]
-
-
-async def test_list_documents_in_category_subtree(
-    store: OpenSearchStore, fake_client: MagicMock
-) -> None:
-    fake_client.search.return_value = {
-        "hits": {
-            "total": {"value": 1},
-            "hits": [{"_source": _make_document().model_dump(mode="json")}],
-        }
-    }
-    _docs, total = await store.list_documents_in_category(
-        category_path="Finance", include_subtree=True, page=1, page_size=10
-    )
-    assert total == 1
-    query = fake_client.search.await_args.kwargs["body"]["query"]
-    # Subtree search should use a bool/should with a prefix clause.
-    assert "should" in query["bool"]["filter"][0]["bool"]
-
-
-async def test_list_documents_in_category_exact(
-    store: OpenSearchStore, fake_client: MagicMock
-) -> None:
-    fake_client.search.return_value = {"hits": {"total": 0, "hits": []}}
-    docs, total = await store.list_documents_in_category(
-        category_path="Finance", include_subtree=False, page=1, page_size=10
-    )
-    assert (docs, total) == ([], 0)
-    query = fake_client.search.await_args.kwargs["body"]["query"]
-    assert query["bool"]["filter"][0] == {"term": {"category_paths": "Finance"}}
-
-
-async def test_bootstrap_tops_up_chunk_title_mapping(
-    store: OpenSearchStore, fake_client: MagicMock
-) -> None:
-    await store.bootstrap()
-    fake_client.indices.put_mapping.assert_awaited_once()
-    body = fake_client.indices.put_mapping.await_args.kwargs["body"]
-    assert "title" in body["properties"]
-
-
-async def test_search_documents(store: OpenSearchStore, fake_client: MagicMock) -> None:
-    fake_client.search.return_value = {
-        "hits": {
-            "total": {"value": 1},
-            "hits": [{"_source": _make_document().model_dump(mode="json")}],
-        }
-    }
-    docs, total = await store.search_documents(
-        query="invoice", page=1, page_size=10, doc_type="invoice", title="Invoice.pdf"
-    )
-    assert total == 1
-    assert docs[0].document_id == "d1"
-    filters = fake_client.search.await_args.kwargs["body"]["query"]["bool"]["filter"]
-    assert {"term": {"doc_type": "invoice"}} in filters
-    assert {"term": {"title.keyword": "Invoice.pdf"}} in filters
-
-
-async def test_update_document_fields_propagates_to_chunks(
-    store: OpenSearchStore, fake_client: MagicMock
-) -> None:
-    fake_client.get.return_value = {"_source": _make_document().model_dump(mode="json")}
-    await store.update_document_fields(
-        "d1",
-        doc_type="contract",
-        category_paths=["Legal/Contracts"],
-    )
-    fake_client.update.assert_awaited_once()
-    doc_body = fake_client.update.await_args.kwargs["body"]["doc"]
-    assert doc_body["doc_type"] == "contract"
-    # Propagated to chunks because doc_type/category changed.
-    fake_client.update_by_query.assert_awaited_once()
-
-
-async def test_update_document_fields_no_propagation_for_folder_only(
-    store: OpenSearchStore, fake_client: MagicMock
-) -> None:
-    fake_client.get.return_value = {"_source": _make_document().model_dump(mode="json")}
-    await store.update_document_fields("d1", folder_structure=["A/B"])
-    fake_client.update.assert_awaited_once()
-    fake_client.update_by_query.assert_not_awaited()
-
-
-async def test_update_document_fields_missing_raises(
-    store: OpenSearchStore, fake_client: MagicMock
-) -> None:
-    fake_client.get.side_effect = None
-    err = Exception("not found")
-    err.status_code = 404  # type: ignore[attr-defined]
-    fake_client.get.side_effect = err
-    with pytest.raises(NotFoundError):
-        await store.update_document_fields("missing", doc_type="x")
 
 
 async def test_delete_chunks(store: OpenSearchStore, fake_client: MagicMock) -> None:
@@ -345,34 +256,277 @@ async def test_delete_chunks(store: OpenSearchStore, fake_client: MagicMock) -> 
     assert body["query"]["term"]["document_id"] == "d1"
 
 
-async def test_write_listener_fires_on_index_and_delete(
-    store: OpenSearchStore, fake_client: MagicMock
-) -> None:
-    fired: list[str] = []
-    store.register_write_listener(lambda: fired.append("x"))
-    await store.index_document(_make_document())
-    await store.delete_document("d1")
-    # index_document + delete_document each notify once.
-    assert len(fired) == 2
+# --------------------------------------------------------------------------- #
+# keyword_search                                                                #
+# --------------------------------------------------------------------------- #
 
 
-async def test_write_listener_fires_on_metadata_update(
+async def test_keyword_search_parses_document_hits(
     store: OpenSearchStore, fake_client: MagicMock
 ) -> None:
-    fired: list[str] = []
-    store.register_write_listener(lambda: fired.append("x"))
-    fake_client.get.return_value = {"_source": _make_document().model_dump(mode="json")}
-    await store.update_document_fields("d1", category_paths=["A/B"])
-    assert fired == ["x"]
+    fake_client.search.return_value = {
+        "hits": {
+            "hits": [
+                {
+                    "_id": "d1",
+                    "_score": 3.2,
+                    "_source": {
+                        "document_id": "d1",
+                        "title": "Invoice.pdf",
+                        "doc_type": "invoice",
+                        "folder_ids": ["f-finance"],
+                    },
+                    "highlight": {"content_markdown": ["... matched <em>text</em> ..."]},
+                }
+            ]
+        }
+    }
+    hits = await store.keyword_search(
+        query="invoice AND 2024",
+        fields=["title^3", "content_markdown"],
+        default_operator="OR",
+        top_k=5,
+        filters=[{"term": {"doc_type": "invoice"}}],
+    )
+    assert len(hits) == 1
+    hit = hits[0]
+    assert hit.document_id == "d1"
+    assert hit.score == 3.2
+    assert hit.doc_type == "invoice"
+    assert hit.folder_ids == ["f-finance"]
+    assert hit.snippet == "... matched <em>text</em> ..."
+    # Query targets the document index with a query_string clause and filters.
+    assert fake_client.search.await_args.kwargs["index"] == store._config.document_index
+    body = fake_client.search.await_args.kwargs["body"]
+    assert body["query"]["bool"]["must"][0]["query_string"]["query"] == "invoice AND 2024"
+    assert {"term": {"doc_type": "invoice"}} in body["query"]["bool"]["filter"]
+
+
+async def test_keyword_search_without_highlight_has_no_snippet(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    fake_client.search.return_value = {
+        "hits": {"hits": [{"_id": "d1", "_score": 1.0, "_source": {"document_id": "d1"}}]}
+    }
+    hits = await store.keyword_search(query="x", fields=["title"], default_operator="OR", top_k=5)
+    assert hits[0].snippet is None
+
+
+async def test_keyword_search_wraps_errors(store: OpenSearchStore, fake_client: MagicMock) -> None:
+    fake_client.search.side_effect = Exception("boom")
+    with pytest.raises(StorageError):
+        await store.keyword_search(query="x", fields=["title"], default_operator="OR", top_k=5)
+
+
+# --------------------------------------------------------------------------- #
+# semantic_search                                                               #
+# --------------------------------------------------------------------------- #
+
+
+async def test_semantic_search_parses_hits(store: OpenSearchStore, fake_client: MagicMock) -> None:
+    fake_client.search.return_value = {
+        "hits": {
+            "hits": [
+                {
+                    "_id": "d1:0",
+                    "_score": 0.9,
+                    "_source": {
+                        "document_id": "d1",
+                        "chunk_id": "d1:0",
+                        "snippet": "hello",
+                        "title": "Invoice.pdf",
+                        "doc_type": "invoice",
+                        "folder_ids": ["f-finance"],
+                    },
+                }
+            ]
+        }
+    }
+    hits = await store.semantic_search(query_vector=[0.1, 0.2], top_k=5)
+    assert len(hits) == 1
+    hit = hits[0]
+    assert hit.chunk_id == "d1:0"
+    assert hit.document_id == "d1"
+    assert hit.snippet == "hello"
+    assert hit.score == 0.9
+    assert hit.folder_ids == ["f-finance"]
+    # Pure kNN query against the chunk index.
+    assert fake_client.search.await_args.kwargs["index"] == store._config.chunk_index
+    body = fake_client.search.await_args.kwargs["body"]
+    assert body["query"]["knn"]["embedding"]["vector"] == [0.1, 0.2]
+
+
+async def test_semantic_search_passes_filters(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    fake_client.search.return_value = {"hits": {"hits": []}}
+    await store.semantic_search(
+        query_vector=[0.1], top_k=3, filters=[{"term": {"doc_type": "invoice"}}]
+    )
+    knn = fake_client.search.await_args.kwargs["body"]["query"]["knn"]["embedding"]
+    assert {"term": {"doc_type": "invoice"}} in knn["filter"]["bool"]["filter"]
+
+
+async def test_semantic_search_wraps_errors(store: OpenSearchStore, fake_client: MagicMock) -> None:
+    fake_client.search.side_effect = Exception("boom")
+    with pytest.raises(StorageError):
+        await store.semantic_search(query_vector=[0.1], top_k=5)
+
+
+# --------------------------------------------------------------------------- #
+# document_search                                                               #
+# --------------------------------------------------------------------------- #
+
+
+async def test_document_search_returns_ids_and_total_dict(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    fake_client.search.return_value = {
+        "hits": {
+            "total": {"value": 5},
+            "hits": [
+                {"_id": "d1", "_source": {"document_id": "d1"}},
+                {"_id": "d2", "_source": {"document_id": "d2"}},
+            ],
+        }
+    }
+    ids, total = await store.document_search(
+        query="invoice", filters=[{"term": {"doc_type": "invoice"}}], from_=0, size=10
+    )
+    assert ids == ["d1", "d2"]
+    assert total == 5
+    assert fake_client.search.await_args.kwargs["index"] == store._config.document_index
+
+
+async def test_document_search_total_as_int(store: OpenSearchStore, fake_client: MagicMock) -> None:
+    fake_client.search.return_value = {"hits": {"total": 2, "hits": []}}
+    ids, total = await store.document_search(query=None, filters=[], from_=0, size=10)
+    assert ids == []
+    assert total == 2
+
+
+async def test_document_search_falls_back_to_hit_id(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    fake_client.search.return_value = {
+        "hits": {"total": {"value": 1}, "hits": [{"_id": "d9", "_source": {}}]}
+    }
+    ids, _ = await store.document_search(query=None, filters=[], from_=0, size=10)
+    assert ids == ["d9"]
+
+
+async def test_document_search_wraps_errors(store: OpenSearchStore, fake_client: MagicMock) -> None:
+    fake_client.search.side_effect = Exception("boom")
+    with pytest.raises(StorageError):
+        await store.document_search(query=None, filters=[], from_=0, size=10)
+
+
+# --------------------------------------------------------------------------- #
+# similar_by_summary (kNN over summary embedding)                               #
+# --------------------------------------------------------------------------- #
+
+
+async def test_similar_by_summary_parses_similar_documents(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    fake_client.search.return_value = {
+        "hits": {
+            "hits": [
+                {
+                    "_id": "d2",
+                    "_score": 0.8,
+                    "_source": {
+                        "document_id": "d2",
+                        "title": "Other invoice",
+                        "doc_type": "invoice",
+                        "summary": "Another invoice.",
+                        "folder_ids": ["f-finance"],
+                        "primary_folder_id": "f-finance",
+                        "value_terms": ["amount=50.00"],
+                    },
+                }
+            ]
+        }
+    }
+    results = await store.similar_by_summary(
+        query_vector=[0.1, 0.2], top_k=5, exclude_document_id="d1"
+    )
+    assert len(results) == 1
+    sim = results[0]
+    assert sim.document_id == "d2"
+    assert sim.score == 0.8
+    assert sim.summary == "Another invoice."
+    assert sim.primary_folder_id == "f-finance"
+    assert sim.value_terms == ["amount=50.00"]
+    # kNN query against the document index, excluding the source document.
+    assert fake_client.search.await_args.kwargs["index"] == store._config.document_index
+    knn = fake_client.search.await_args.kwargs["body"]["query"]["knn"]["summary_embedding"]
+    assert knn["vector"] == [0.1, 0.2]
+    must_not = knn["filter"]["bool"]["must_not"]
+    assert {"term": {"document_id": "d1"}} in must_not
+
+
+async def test_similar_by_summary_wraps_errors(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    fake_client.search.side_effect = Exception("boom")
+    with pytest.raises(StorageError):
+        await store.similar_by_summary(query_vector=[0.1], top_k=5)
+
+
+# --------------------------------------------------------------------------- #
+# similar_by_text (more_like_this)                                              #
+# --------------------------------------------------------------------------- #
+
+
+async def test_similar_by_text_parses_similar_documents(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    fake_client.search.return_value = {
+        "hits": {
+            "hits": [
+                {
+                    "_id": "d3",
+                    "_score": 4.2,
+                    "_source": {
+                        "document_id": "d3",
+                        "title": "Similar contract",
+                        "doc_type": "contract",
+                        "summary": "A contract.",
+                        "folder_ids": ["f-legal"],
+                        "primary_folder_id": "f-legal",
+                        "value_terms": [],
+                    },
+                }
+            ]
+        }
+    }
+    results = await store.similar_by_text(text="liability", top_k=5, exclude_document_id="d1")
+    assert len(results) == 1
+    sim = results[0]
+    assert sim.document_id == "d3"
+    assert sim.score == 4.2
+    assert sim.doc_type == "contract"
+    assert sim.folder_ids == ["f-legal"]
+    # more_like_this query against the document index, excluding the source document.
+    assert fake_client.search.await_args.kwargs["index"] == store._config.document_index
+    body = fake_client.search.await_args.kwargs["body"]
+    mlt = body["query"]["bool"]["must"][0]["more_like_this"]
+    assert mlt["like"] == "liability"
+    assert {"term": {"document_id": "d1"}} in body["query"]["bool"]["must_not"]
+
+
+async def test_similar_by_text_wraps_errors(store: OpenSearchStore, fake_client: MagicMock) -> None:
+    fake_client.search.side_effect = Exception("boom")
+    with pytest.raises(StorageError):
+        await store.similar_by_text(text="x", top_k=5)
+
+
+# --------------------------------------------------------------------------- #
+# close                                                                         #
+# --------------------------------------------------------------------------- #
 
 
 async def test_close(store: OpenSearchStore, fake_client: MagicMock) -> None:
     await store.close()
     fake_client.close.assert_awaited_once()
-
-
-def test_client_lazy_build() -> None:
-    cfg = OpenSearchConfig(hosts="http://localhost:9200", password="")
-    store = OpenSearchStore(cfg)
-    client: Any = store.client
-    assert client is not None

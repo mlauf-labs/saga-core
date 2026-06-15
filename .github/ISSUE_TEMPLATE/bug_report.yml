@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a problem with DocStore
+description: Report a problem with Saga
 labels: [bug]
 body:
   - type: textarea
@@ -28,7 +28,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: DocStore version / commit
+      label: Saga version / commit
     validations:
       required: true
   - type: textarea

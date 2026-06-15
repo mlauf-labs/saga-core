@@ -1,13 +1,13 @@
 # Backup & restore
 
-DocStore can export every stored document to a local directory tree (FR-28..31).
+Saga can export every stored document to a local directory tree (FR-28..31).
 
 ## Run a backup
 
 ```bash
-docstore-backup \
+saga-backup \
   --base-url http://localhost:8000 \
-  --token "$DOCSTORE_API_TOKEN" \
+  --token "$SAGA_API_TOKEN" \
   --out ./backup \
   --page-size 50
 ```
@@ -17,9 +17,11 @@ document, downloads the original binary via `GET /documents/{id}/file`.
 
 ## Directory layout
 
-For each document, files are written into a directory derived from the **first entry**
-of the document's `folder_structure` (FR-30). Each path component is sanitised for the
-local filesystem; documents without a folder structure go under `_uncategorized`.
+For each document, files are written into a directory derived from the document's
+**`primary_folder_path`** — the list of folder names from the root down to the
+document's primary folder, supplied by the export endpoint (FR-30). Each path component
+is sanitised for the local filesystem; documents that belong to no folder go under
+`_unfiled`.
 
 ```
 backup/
@@ -31,9 +33,9 @@ backup/
 ```
 
 The base filename is `<sanitized-title>__<document_id>` to avoid collisions. The
-metadata sidecar contains the full document record (type, extracted values,
-`folder_structure`, `category_paths`, hashes, timestamps, …) except `content_markdown`,
-which is stored as the `.md` file.
+metadata sidecar contains the full document record (doc-type, summary, extracted
+values, folders + `primary_folder_path`, notes, hashes, timestamps, …) except
+`content_markdown`, which is stored as the `.md` file.
 
 ## Notes
 

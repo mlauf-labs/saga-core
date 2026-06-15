@@ -1,10 +1,10 @@
-# DocStore main configuration.
+# Saga main configuration.
 # Secrets MUST be provided via environment variables using ${ENV_VAR} syntax.
 # See .env.example for the list of required variables.
 
 app:
-  name: docstore
-  environment: ${DOCSTORE_ENV:-development}
+  name: ${SAGA_STORE_NAME:-saga}
+  environment: ${SAGA_ENV:-development}
 
 api:
   host: 0.0.0.0
@@ -30,33 +30,38 @@ mcp:
 
 security:
   # Bearer token(s) for REST + MCP. Comma-separated list resolved from env.
-  bearer_tokens: ${DOCSTORE_API_TOKENS}
+  bearer_tokens: ${SAGA_API_TOKENS}
 
 opensearch:
   hosts: ${OPENSEARCH_HOSTS:-http://opensearch:9200}
   username: ${OPENSEARCH_USERNAME:-admin}
   password: ${OPENSEARCH_PASSWORD}
   verify_certs: false
-  document_index: documents
-  chunk_index: document_chunks
-  hybrid_pipeline: docstore-hybrid
+  document_index: ${SAGA_STORE_NAME:-saga}-documents
+  chunk_index: ${SAGA_STORE_NAME:-saga}-document_chunks
+  hybrid_pipeline: ${SAGA_STORE_NAME:-saga}-hybrid
   # Must match the active embedding model (FR-27). Changing requires reindex.
   vector_dimension: 768
   vector_space_type: cosinesimil
   vector_engine: faiss
   knn_ef_construction: 256
   knn_m: 16
-  # Relative weights for hybrid score combination [lexical, semantic].
-  hybrid_weights: [0.4, 0.6]
-  hybrid_normalization: min_max
-  hybrid_combination: arithmetic_mean
+  # Reciprocal Rank Fusion constant for combining keyword + semantic rankings (FR-19).
+  rrf_k: 60
+
+postgres:
+  # Relational system of record for documents, folders, doc-types, notes, membership.
+  dsn: ${POSTGRES_DSN:-postgresql+asyncpg://saga:saga@postgres:5432/saga}
+  pool_size: 10
+  max_overflow: 20
+  echo: false
 
 minio:
   endpoint: ${MINIO_ENDPOINT:-minio:9000}
   access_key: ${MINIO_ACCESS_KEY}
   secret_key: ${MINIO_SECRET_KEY}
   secure: false
-  bucket: docstore-originals
+  bucket: ${SAGA_STORE_NAME:-saga}-originals
 
 redis:
   url: ${REDIS_URL:-redis://redis:6379/0}
@@ -73,6 +78,40 @@ dedup:
   on_duplicate: replace
   # On update: keep | new (FR-11)
   document_id_on_update: keep
+
+similarity:
+  # Ingestion-time document similarity used to suggest a folder (FR-16).
+  candidate_pool: 50
+  top_k: 10
+  weight_semantic: 0.6
+  weight_lexical: 0.15
+  weight_doc_type: 0.1
+  weight_values: 0.15
+  primary_folder_boost: 1.5
+  ancestor_credit: 0.3
+  max_folder_votes: 5
+
+generation:
+  # Natural language used for LLM-generated content: summaries, folder names/descriptions,
+  # doc-type descriptions, and folder-placement rationale.  Use a full name understood by
+  # the active LLM model (e.g. "German", "French", "Spanish").
+  # Default: "English".
+  # Exception: extracted metadata keys/values (value-extraction step) are ALWAYS in English.
+  language: ${SAGA_LANGUAGE:-English}
+  # Optional free-text description of this archive's purpose. Injected into LLM prompts to
+  # guide folder names, doc-type labels, and descriptions toward the archive's actual use
+  # case (e.g. family archive, HR department, project archive).  Leave empty to use
+  # generic LLM behaviour.  See .env.example for recommended description guidelines.
+  description: ${SAGA_STORE_DESCRIPTION:-}
+
+langfuse:
+  # Leave public_key / secret_key empty to disable Langfuse tracing entirely.
+  # Keys are found in Langfuse UI → Settings → API Keys.
+  public_key: ${LANGFUSE_PUBLIC_KEY:-}
+  secret_key: ${LANGFUSE_SECRET_KEY:-}
+  # EU cloud: https://cloud.langfuse.com | US: https://us.cloud.langfuse.com
+  # Self-hosted: http://your-host:3000
+  host: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
 
 logging:
   config_file: config/logging.yaml

@@ -10,11 +10,113 @@ services:
   docling:
     base_url: ${DOCLING_URL:-http://docling:5001}
     timeout_seconds: 600
-    # Output format requested from the service.
     output_format: markdown
     ocr:
       enabled: true
+      force: true          # force OCR even when native text layer is present
+      preset: easyocr      # EasyOCR supports German/Latin scripts (RapidOCR default uses Chinese models)
       languages: [en, de]
+    vlm:
+      enabled: true
+
+      # ── VLM delivery mode ───────────────────────────────────────────────────
+      #
+      #  api    → Send page images to an external OpenAI-compatible endpoint
+      #           (Ollama, vLLM, LM Studio, …). Uses api_url + model below.
+      #           Requires DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true.
+      #
+      #  preset → Use a named built-in preset that is registered in docling-serve.
+      #           The model runs INSIDE the container — no external dependency.
+      #           The container must have the matching weights or internet access
+      #           to download them from HuggingFace on first use.
+      #           Requires DOCLING_SERVE_ALLOW_CUSTOM_VLM_CONFIG=true.
+      #
+      #  local  → Load any HuggingFace model inline inside the container via
+      #           Transformers. Full control over every inference parameter.
+      #           Downloaded automatically on first request (see hf-cache volume).
+      #           Requires DOCLING_SERVE_ALLOW_CUSTOM_VLM_CONFIG=true.
+      #
+      # Default: api  (works out-of-the-box without touching the container image)
+      mode: ${DOCLING_VLM_MODE:-api}
+
+      # ── mode: api — external OpenAI-compatible endpoint ─────────────────────
+      #
+      # Tested 2026-06-10 on RTX 3090 Ti (qwen2.5vl:7b via Ollama):
+      #   qwen2.5vl:7b           → 7.7 s, 273 tokens, COMPLETE output ✓
+      #   ibm/granite-docling GGUF → 1.4 s, 188 tokens, only page header ✗
+      #
+      # NOTE: granite-docling GGUF via Ollama stops after ~188 tokens, missing
+      # tables and body text. Use mode=preset or mode=local for granite-docling.
+      # See: https://github.com/docling-project/docling/issues/…
+      #
+      # Good models for mode=api (Ollama):
+      #   qwen2.5vl:7b           markdown output, 7b, fast on GPU
+      #   llava:13b              markdown output, 13b
+      #   granite-vision:3.2-2b  markdown output, 2b, IBM
+      api_url: ${OLLAMA_URL:-http://10.0.0.222:11434}/v1/chat/completions
+      model: ${DOCLING_VLM_MODEL:-qwen2.5vl:7b}
+      concurrency: 1
+
+      # ── mode: preset — built-in docling-serve preset ────────────────────────
+      #
+      # Available presets in docling 2.91+ (VlmModelType enum):
+      #
+      #   granite_docling        ibm-granite/granite-docling-258M  DocTags  CPU/GPU
+      #   smoldocling            docling-project/SmolDocling-256M  DocTags  CPU/GPU
+      #   granite_vision         ibm-granite/granite-vision-3.2-2b Markdown CPU/GPU
+      #   granite_vision_ollama  same model via Ollama API          Markdown api
+      #   granite_docling_ollama ibm/granite-docling GGUF (Ollama)  DocTags  (NOT RECOMMENDED, see above)
+      #   deepseekocr_ollama     DeepSeek-OCR via Ollama API        Markdown api
+      #
+      # When using preset, docling-serve controls prompt and response_format
+      # internally — the shared settings below are ignored for this mode.
+      preset: ${DOCLING_VLM_PRESET:-granite_docling}
+
+      # ── mode: local — HuggingFace inline model ──────────────────────────────
+      #
+      # The model is downloaded once from HuggingFace and cached on disk.
+      # Mount a Docker volume at /root/.cache/huggingface (hf-cache) to persist
+      # across container restarts (see docker-compose.yml).
+      #
+      # Container requirements: torch (CPU or CUDA) + transformers are already
+      # present in quay.io/docling-project/docling-serve-cpu:latest.
+      #
+      # Tested: GRANITEDOCLING_TRANSFORMERS preset config uses load_in_8bit=true
+      # which results in ~260 MB RAM. max_new_tokens=8192 produces COMPLETE output
+      # (unlike the GGUF variant via Ollama which truncates at 188 tokens).
+      #
+      # Good models for mode=local:
+      #   ibm-granite/granite-docling-258M   258M  DocTags  10-45 s/page on CPU
+      #   docling-project/SmolDocling-256M-preview  256M  DocTags  similar speed
+      #   ibm-granite/granite-vision-3.2-2b  2B    Markdown slower on CPU
+      repo_id: ${DOCLING_VLM_REPO_ID:-ibm-granite/granite-docling-258M}
+      inference_framework: transformers        # transformers | mlx (Apple Silicon only)
+      transformers_model_type: automodel-imagetexttotext
+      max_new_tokens: 8192                     # allows full DocTags output for a complete page
+      load_in_8bit: true                       # 8-bit quant: ~260 MB RAM; set false for fp32
+
+      # ── shared settings (used by mode: api and mode: local) ─────────────────
+      #
+      # response_format:
+      #   markdown  → for generic vision models (qwen2.5vl, granite-vision, llava)
+      #   doctags   → for IBM granite-docling and SmolDocling (structured XML-like)
+      #
+      # Switch prompt + response_format together when changing models:
+      #
+      #   mode=api   + qwen2.5vl:7b           → markdown + markdown prompt (default)
+      #   mode=local + granite-docling-258M    → doctags  + "Convert this page to docling."
+      #   mode=local + SmolDocling-256M        → doctags  + "Convert this page to docling."
+      #   mode=local + granite-vision-3.2-2b   → markdown + markdown prompt
+      prompt: "Convert this page to markdown. Extract ALL text verbatim and preserve tables, numbers and structure exactly. Do not summarize."
+      response_format: ${DOCLING_VLM_RESPONSE_FORMAT:-markdown}
+
+      # Timeout for a single VLM inference call (seconds).
+      # 1200 s = 20 min — generous for multi-page PDFs or slow hardware.
+      # For mode=local on CPU, a single page takes 15-45 s → adjust to fit your
+      # expected page count (e.g. 50 pages × 45 s = 2250 s).
+      timeout: 1200.0
+      scale: 2.0       # image upscaling factor sent to the VLM (1.0–4.0)
+      temperature: 0.0 # 0 = deterministic output
   kreuzberg:
     base_url: ${KREUZBERG_URL:-http://kreuzberg:8000}
     timeout_seconds: 600

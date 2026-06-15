@@ -1,10 +1,12 @@
-# DocStore
+# SAGA
 
-> A document store for RAG agents — ingest any text-convertible document, enrich it
-> with LLM-extracted metadata, index it in OpenSearch (keyword + vector), and let
-> agents query it via **hybrid search** over MCP.
+> **SAGA** — *Self-organizing Archive for Generative Agents* — is a self-organizing,
+> AI-native document archive for RAG agents: ingest any text-convertible document, enrich it
+> with LLM-extracted metadata, keep it in **Postgres** (system of record), project it
+> into **OpenSearch** (keyword + vector), and let agents query it via fused **hybrid
+> search** and organise it over MCP.
 
-[![CI](https://github.com/OWNER/docstore/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/docstore/actions/workflows/ci.yml)
+[![CI](https://github.com/mlauf-labs/saga-core/actions/workflows/ci.yml/badge.svg)](https://github.com/mlauf-labs/saga-core/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 > **Status:** 1.0.0 — the full ingestion-to-search pipeline is implemented (storage,
@@ -19,13 +21,17 @@
   via the REST API.
 - **Convert** to Markdown using containerised **Docling** (PDF) and **Kreuzberg**
   (everything else, incl. OCR) — routing is configurable.
-- **Enrich** with an LLM: document **classification**, extraction of **identifiers/
-  numbers** (invoice/contract numbers, phone numbers, IBANs, dates, amounts, …),
-  and **hierarchical categorisation** (e.g. `Insurance/Health`).
-- **Store** originals in **MinIO**, text + metadata in an OpenSearch **document
-  index**, and chunk **vectors** in a separate **vector index** referencing the doc.
-- **Search** via an **MCP server** offering performant **hybrid** (keyword +
-  semantic) retrieval, metadata filtering, and category-tree browsing.
+- **Enrich** with an LLM: **doc-type** classification (first-class types), extraction
+  of **identifiers/numbers** (invoice/contract numbers, phone numbers, IBANs, dates,
+  amounts, …), a short **summary**, and placement into **folders** (hierarchical,
+  n:m) using document-similarity voting.
+- **Store** the authoritative record in **Postgres** (documents, folders, doc-types,
+  notes, memberships) and the original binary in **MinIO**; project text + summary +
+  filter fields into an OpenSearch **document index** and chunk **vectors** into a
+  separate **vector index**.
+- **Search** via an **MCP server** offering performant **fused hybrid** (keyword +
+  semantic, RRF) retrieval, metadata filtering, and folder-tree browsing — plus write
+  tools to reorganise documents, folders, doc-types, and notes.
 - **Back up** everything to a directory tree via a paginated export API + script.
 
 See the [architecture](docs/requirements/03-architecture.md) for details.
@@ -33,13 +39,16 @@ See the [architecture](docs/requirements/03-architecture.md) for details.
 ## Architecture at a glance
 
 ```
-Client ──REST(Bearer)──► API ──┬─► MinIO (originals)
-                               ├─► OpenSearch (doc + vector indices)
+Client ──REST(Bearer)──► API ──┬─► Postgres (system of record)
+                               ├─► MinIO (originals)
+                               ├─► OpenSearch (doc projection + vector index)
                                └─► Redis ──► Worker (ARQ)
                                               ├─► Docling / Kreuzberg (convert)
-                                              ├─► LLM (classify/extract/categorise)
-                                              └─► Embeddings ──► OpenSearch
-Agent ──MCP(HTTP, Bearer)──► MCP server ──► OpenSearch (hybrid search) + Embeddings
+                                              ├─► LLM (classify type / extract / summarise / place)
+                                              ├─► Embeddings
+                                              ├─► Postgres (persist)
+                                              └─► OpenSearch (project + index)
+Agent ──MCP(HTTP, Bearer)──► MCP server ──► Postgres + OpenSearch (fused hybrid search) + Embeddings
 ```
 
 Providers (LLM + embeddings) are pluggable: **Ollama** (default), **OpenAI**, or
@@ -79,7 +88,7 @@ secrets:
 
 | File | Purpose |
 |------|---------|
-| `config/config.yaml` | API, MCP, OpenSearch, MinIO, Redis, chunking, security. |
+| `config/config.yaml` | API, MCP, security, OpenSearch, Postgres, MinIO, Redis, chunking, dedup, similarity. |
 | `config/converters.yaml` | File-type → converter routing (PDF→Docling, else→Kreuzberg). |
 | `config/providers.yaml` | LLM + embedding provider selection and models. |
 | `config/logging.yaml` | Log levels, colour, categories. |

@@ -8,12 +8,12 @@ renderer: ${LOG_RENDERER:-console}
 include_correlation_id: true
 
 categories:
-  docstore.api: INFO
-  docstore.mcp: INFO
-  docstore.pipeline: INFO
-  docstore.storage: INFO
-  docstore.llm: INFO
-  docstore.converters: INFO
+  saga.api: INFO
+  saga.mcp: INFO
+  saga.pipeline: INFO
+  saga.storage: INFO
+  saga.llm: INFO
+  saga.converters: INFO
   # Third-party noise reduction.
   opensearch: WARNING
   httpx: WARNING

@@ -52,4 +52,4 @@ jobs:
           context: .
           file: docker/Dockerfile
           push: false
-          tags: docstore:ci
+          tags: saga:ci

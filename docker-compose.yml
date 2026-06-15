@@ -1,4 +1,4 @@
-# DocStore full stack (NFR-6). Brings up every component.
+# Saga full stack (NFR-6). Brings up every component.
 #
 # Usage:
 #   cp .env.example .env   # then edit secrets
@@ -8,16 +8,27 @@
 # For reproducible production deploys, pin images in a docker-compose.prod.yml
 # override (NFR-35) — see docs/operations.md ("Image pinning").
 
-name: docstore
+name: saga
+
+# Prompt instruction files are mounted read-only from the local config/prompts/
+# directory so operators can customise LLM behaviour without rebuilding the image.
+# Edit the files under config/prompts/ and restart the affected service to apply
+# changes.  When running the image directly (docker run, no compose), the files
+# baked into the image at /app/config/prompts/ are used as the default.
+in: &prompts-mount
+  - ./config/prompts:/app/config/prompts:ro
 
 x-app-env: &app-env
-  DOCSTORE_ENV: ${DOCSTORE_ENV:-development}
-  DOCSTORE_API_TOKENS: ${DOCSTORE_API_TOKENS}
+  SAGA_STORE_NAME: ${SAGA_STORE_NAME:-saga}
+  SAGA_STORE_DESCRIPTION: ${SAGA_STORE_DESCRIPTION:-}
+  SAGA_ENV: ${SAGA_ENV:-development}
+  SAGA_API_TOKENS: ${SAGA_API_TOKENS}
   API_CORS_ALLOW_ORIGINS: ${API_CORS_ALLOW_ORIGINS:-*}
   API_CORS_ALLOW_CREDENTIALS: ${API_CORS_ALLOW_CREDENTIALS:-true}
   OPENSEARCH_HOSTS: http://opensearch:9200
   OPENSEARCH_USERNAME: ${OPENSEARCH_USERNAME:-admin}
   OPENSEARCH_PASSWORD: ${OPENSEARCH_PASSWORD}
+  POSTGRES_DSN: postgresql+asyncpg://${POSTGRES_USER:-saga}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-saga}
   MINIO_ENDPOINT: minio:9000
   MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
   MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
@@ -26,7 +37,20 @@ x-app-env: &app-env
   KREUZBERG_URL: http://kreuzberg:8000
   LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
   EMBEDDINGS_PROVIDER: ${EMBEDDINGS_PROVIDER:-ollama}
-  OLLAMA_URL: http://ollama:11434
+  OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+  # Optional Ollama server fleet (least-busy distribution + failover).
+  OLLAMA_URL_1: ${OLLAMA_URL_1:-}
+  OLLAMA_URL_2: ${OLLAMA_URL_2:-}
+  OLLAMA_URL_3: ${OLLAMA_URL_3:-}
+  OLLAMA_URL_4: ${OLLAMA_URL_4:-}
+  OLLAMA_MAX_CONCURRENT_1: ${OLLAMA_MAX_CONCURRENT_1:-}
+  OLLAMA_MAX_CONCURRENT_2: ${OLLAMA_MAX_CONCURRENT_2:-}
+  OLLAMA_MAX_CONCURRENT_3: ${OLLAMA_MAX_CONCURRENT_3:-}
+  OLLAMA_MAX_CONCURRENT_4: ${OLLAMA_MAX_CONCURRENT_4:-}
+  OLLAMA_CONNECT_TIMEOUT: ${OLLAMA_CONNECT_TIMEOUT:-5.0}
+  OLLAMA_COOLDOWN_SECONDS: ${OLLAMA_COOLDOWN_SECONDS:-30}
+  OLLAMA_STARTUP_MODEL_CHECK: ${OLLAMA_STARTUP_MODEL_CHECK:-true}
+  OLLAMA_PULL_MISSING_MODELS: ${OLLAMA_PULL_MISSING_MODELS:-true}
   # Provider models / credentials (resolved by config/providers.yaml).
   OLLAMA_LLM_MODEL: ${OLLAMA_LLM_MODEL:-llama3.1:8b}
   OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
@@ -48,14 +72,15 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-      additional_contexts:
-        structured_output: ../structured_output
-    command: ["docstore-api"]
+    command: ["saga-api"]
     environment: *app-env
+    volumes: *prompts-mount
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
       opensearch:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
@@ -73,14 +98,15 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-      additional_contexts:
-        structured_output: ../structured_output
-    command: ["docstore-worker"]
+    command: ["saga-worker"]
     environment: *app-env
+    volumes: *prompts-mount
     depends_on:
       redis:
         condition: service_healthy
       opensearch:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
@@ -90,14 +116,15 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-      additional_contexts:
-        structured_output: ../structured_output
-    command: ["docstore-mcp"]
+    command: ["saga-mcp"]
     environment: *app-env
+    volumes: *prompts-mount
     ports:
       - "${MCP_PORT:-8100}:8100"
     depends_on:
       opensearch:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     restart: unless-stopped
 
@@ -105,6 +132,16 @@ services:
     image: quay.io/docling-project/docling-serve-cpu:latest
     environment:
       DOCLING_SERVE_ENABLE_UI: "false"
+      # Required for mode=api (connect to external Ollama/vLLM endpoint).
+      DOCLING_SERVE_ENABLE_REMOTE_SERVICES: "true"
+      # Required for mode=preset and mode=local (custom VLM config in request).
+      DOCLING_SERVE_ALLOW_CUSTOM_VLM_CONFIG: "true"
+      # HuggingFace cache location (used by mode=preset and mode=local).
+      HF_HOME: /app/hf-cache
+      TRANSFORMERS_CACHE: /app/hf-cache
+    volumes:
+      # Persist HuggingFace model downloads across container restarts.
+      - hf-cache:/app/hf-cache
     ports:
       - "5001:5001"
     restart: unless-stopped
@@ -155,6 +192,23 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-saga}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-saga}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-saga} -d ${POSTGRES_DB:-saga}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
@@ -200,6 +254,8 @@ services:
 
 volumes:
   opensearch-data:
+  postgres-data:
   minio-data:
   redis-data:
   ollama-data:
+  hf-cache:       # HuggingFace model cache (docling-serve mode=preset / mode=local)

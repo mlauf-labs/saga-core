@@ -1,6 +1,6 @@
 # Implementation Plan
 
-> Status: Draft v1 · Project: **DocStore**
+> Status: Draft v1 · Project: **Saga**
 >
 > Rollout is organised into phases. Each phase is independently shippable, ends with
 > tests + docs, and references the functional requirements (`FR-x`) it satisfies.
@@ -8,6 +8,18 @@
 > merged into `develop`, with a `release/*` cut at milestone boundaries.
 
 Legend: ☐ todo · ☑ done.
+
+> **Post-1.0 architecture refactor.** Since the 1.0.0 release the storage model changed:
+> **Postgres** is now the **system of record** (documents, doc-types, folders, notes,
+> memberships) and **OpenSearch** is a **rebuildable search projection**. The old
+> derived "categories" / `folder_structure` were replaced by first-class **folders**
+> (hierarchical, n:m membership with a primary), **doc-types** became a first-class
+> 1:1 entity, and documents gained a **summary** and **notes**. Ingestion is now
+> convert → classify doc-type → extract → summarise (+embed) → compute similarity →
+> place in folder(s) → persist → project + index. Hybrid search returns a **single
+> fused list** via Reciprocal Rank Fusion. The historical phase records below are kept
+> as-is; see [`../requirements/03-architecture.md`](../requirements/03-architecture.md)
+> for the current design.
 
 ---
 
@@ -17,7 +29,7 @@ Legend: ☐ todo · ☑ done.
 full toolchain wired up. No business logic yet.
 
 - ☐ `pyproject.toml` (uv) with dependency groups (app, dev, test) and tooling config.
-- ☐ Package skeleton `src/docstore/**` with typed module stubs + public interfaces.
+- ☐ Package skeleton `src/saga/**` with typed module stubs + public interfaces.
 - ☐ Config files (`config/*.yaml`) + typed config loader (Pydantic Settings) with
       `${ENV}` resolution.
 - ☐ Structured, coloured logging setup.
@@ -67,7 +79,7 @@ delete (FR-26); 95% coverage on implemented code.
 - ☑ API tests (TestClient) with injectable in-memory services.
 
 Delivered: `api/app.py` (lifespan + DI), `api/dependencies.py` (Services container +
-auth, store Protocols), `api/errors.py` (DocStoreError → HTTP), `api/schemas.py`,
+auth, store Protocols), `api/errors.py` (SagaError → HTTP), `api/schemas.py`,
 `api/service.py` (ingest/dedup/replace logic), `api/routes/documents.py`. See
 [`../api/rest-api.md`](../api/rest-api.md). Coverage 94%.
 
@@ -165,7 +177,7 @@ Delivered: `search/{tree,service}.py`, `api/routes/search.py`, `mcp/{server,auth
 - ☑ Paginated export endpoint `GET /export/documents` (`search_after` cursor,
       opaque base64 token) including content + metadata.
 - ☑ Binary download endpoint `GET /documents/{id}/file`.
-- ☑ `scripts/backup.py` (`docstore-backup`): pages the export API and writes, per
+- ☑ `scripts/backup.py` (`saga-backup`): pages the export API and writes, per
       document, into a directory from `folder_structure[0]`: the original binary, the
       `.md` text, and a `*.metadata.json` sidecar.
 - ☑ Tests for cursor codec, scroll store, export route, layout helpers, and the

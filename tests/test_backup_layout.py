@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from docstore.scripts.layout import (
+from saga.scripts.layout import (
     backup_basename,
     backup_relative_dir,
     metadata_payload,
@@ -17,13 +17,18 @@ def test_sanitize_component() -> None:
     assert sanitize_component("   ") == "_"
 
 
-def test_backup_relative_dir_uses_first_entry() -> None:
-    path = backup_relative_dir(["Insurance/Health", "Finance"])
+def test_backup_relative_dir_uses_primary_folder_path() -> None:
+    path = backup_relative_dir(["Insurance", "Health"])
     assert path.parts == ("Insurance", "Health")
 
 
-def test_backup_relative_dir_uncategorized() -> None:
-    assert backup_relative_dir([]).parts == ("_uncategorized",)
+def test_backup_relative_dir_sanitizes_each_segment() -> None:
+    path = backup_relative_dir(["Fin/ance", "Q1"])
+    assert path.parts == ("Fin_ance", "Q1")
+
+
+def test_backup_relative_dir_unfiled() -> None:
+    assert backup_relative_dir([]).parts == ("_unfiled",)
 
 
 def test_basename_and_original_filename() -> None:

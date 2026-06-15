@@ -6,9 +6,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from docstore.core.config import MinioConfig
-from docstore.core.errors import StorageError
-from docstore.storage.minio import MinioStore
+from saga.core.config import MinioConfig
+from saga.core.errors import StorageError
+from saga.storage.minio import MinioStore
 
 
 @pytest.fixture
@@ -20,12 +20,12 @@ def fake_client() -> MagicMock:
 
 @pytest.fixture
 def store(fake_client: MagicMock) -> MinioStore:
-    return MinioStore(MinioConfig(bucket="docstore-originals"), client=fake_client)
+    return MinioStore(MinioConfig(bucket="saga-originals"), client=fake_client)
 
 
 async def test_bootstrap_creates_missing_bucket(store: MinioStore, fake_client: MagicMock) -> None:
     await store.bootstrap()
-    fake_client.make_bucket.assert_called_once_with("docstore-originals")
+    fake_client.make_bucket.assert_called_once_with("saga-originals")
 
 
 async def test_bootstrap_skips_existing_bucket(store: MinioStore, fake_client: MagicMock) -> None:
@@ -36,7 +36,7 @@ async def test_bootstrap_skips_existing_bucket(store: MinioStore, fake_client: M
 
 async def test_put_object_returns_key(store: MinioStore, fake_client: MagicMock) -> None:
     key = await store.put_object("d1", b"hello", "application/pdf")
-    assert key == "docstore-originals/d1"
+    assert key == "saga-originals/d1"
     fake_client.put_object.assert_called_once()
 
 
@@ -51,7 +51,7 @@ async def test_get_object_reads_and_closes(store: MinioStore, fake_client: Magic
 
 async def test_remove_object(store: MinioStore, fake_client: MagicMock) -> None:
     await store.remove_object("d1")
-    fake_client.remove_object.assert_called_once_with("docstore-originals", "d1")
+    fake_client.remove_object.assert_called_once_with("saga-originals", "d1")
 
 
 async def test_errors_wrapped(store: MinioStore, fake_client: MagicMock) -> None:
@@ -63,4 +63,4 @@ async def test_errors_wrapped(store: MinioStore, fake_client: MagicMock) -> None
 def test_client_lazy_build() -> None:
     store = MinioStore(MinioConfig(endpoint="localhost:9000", access_key="a", secret_key="b"))
     assert store.client is not None
-    assert store.bucket == "docstore-originals"
+    assert store.bucket == "saga-originals"

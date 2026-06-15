@@ -6,10 +6,10 @@ import httpx
 import pytest
 import respx
 
-from docstore.converters.config import OcrConfig, ServiceConfig
-from docstore.converters.docling import DoclingConverter
-from docstore.converters.kreuzberg import KreuzbergConverter
-from docstore.core.errors import ConversionError
+from saga.converters.config import OcrConfig, ServiceConfig
+from saga.converters.docling import DoclingConverter
+from saga.converters.kreuzberg import KreuzbergConverter
+from saga.core.errors import ConversionError
 
 DOCLING_URL = "http://docling:5001"
 KREUZBERG_URL = "http://kreuzberg:8000"
