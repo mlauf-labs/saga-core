@@ -17,7 +17,8 @@ from pydantic import Field
 from saga.api import service
 from saga.api.schemas import DocumentPatch
 from saga.core.logging import get_logger
-from saga.core.models import ExtractedValue
+from saga.core.models import EventCategory, ExtractedValue
+from saga.events import EventQuery
 from saga.llm.prompts import PromptLibrary
 
 if TYPE_CHECKING:
@@ -214,6 +215,38 @@ def build_server(
 
     async def list_doc_types() -> list[dict[str, Any]]:
         return [dt.model_dump(mode="json") for dt in await services.db.list_doc_types()]
+
+    async def get_timeline(
+        document_id: Annotated[str | None, Field(description="Restrict to one document.")] = None,
+        folder_id: Annotated[
+            str | None, Field(description="Restrict to a folder (and its subtree).")
+        ] = None,
+        category: Annotated[
+            str | None, Field(description="'audit' or 'content'; omit for both.")
+        ] = None,
+        order_by: Annotated[
+            str, Field(description="'recorded_at' (archive time) or 'occurred_at' (event time).")
+        ] = "recorded_at",
+        limit: Annotated[int, Field(description="Max events to return.")] = 50,
+        offset: Annotated[int, Field(description="Pagination offset.")] = 0,
+    ) -> dict[str, Any]:
+        if services.timeline is None:
+            return {"items": [], "limit": limit, "offset": offset}
+        categories = (EventCategory(category),) if category else None
+        query = EventQuery(
+            categories=categories,
+            document_id=document_id,
+            folder_id=folder_id,
+            order_by="occurred_at" if order_by == "occurred_at" else "recorded_at",
+            limit=min(limit, services.config.timeline.max_page_size),
+            offset=offset,
+        )
+        events = await services.timeline.query(query)
+        return {
+            "items": [e.model_dump(mode="json") for e in events],
+            "limit": query.limit,
+            "offset": query.offset,
+        }
 
     # --------------------------- write tools ------------------------------- #
 
@@ -425,6 +458,7 @@ def build_server(
         get_folder,
         list_documents_in_folder,
         list_doc_types,
+        get_timeline,
         update_document_metadata,
         assign_document_to_folder,
         remove_document_from_folder,
