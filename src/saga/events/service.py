@@ -1,8 +1,8 @@
 """Read path for the timeline/audit log (timeline design).
 
 A single :class:`TimelineService` used by the REST routes, the MCP tool, and (later)
-the OKF exporter. Folder filters are expanded to include the subtree here, so the
-store stays a simple ``folder_id IN (...)`` query.
+the OKF exporter. Folder filters are expanded to the subtree here, and document-level
+events are matched via current folder membership (design §6.2).
 """
 
 from __future__ import annotations
@@ -24,6 +24,8 @@ class TimelineStore(Protocol):
 
     async def parents_map(self) -> dict[str, str | None]: ...
 
+    async def document_ids_in_folders(self, folder_ids: Sequence[str]) -> list[str]: ...
+
     async def query_events(
         self,
         *,
@@ -31,6 +33,7 @@ class TimelineStore(Protocol):
         event_types: Sequence[EventType] | None = ...,
         document_id: str | None = ...,
         folder_ids: Sequence[str] | None = ...,
+        document_ids: Sequence[str] | None = ...,
         occurred_from: datetime | None = ...,
         occurred_to: datetime | None = ...,
         order_by: Literal["recorded_at", "occurred_at"] = ...,
@@ -65,17 +68,22 @@ class TimelineService:
 
     async def query(self, q: EventQuery) -> list[Event]:
         folder_ids: list[str] | None = None
+        document_ids: list[str] | None = None
         if q.folder_id is not None:
             if q.include_subtree:
                 parents = await self._store.parents_map()
                 folder_ids = descendant_ids(q.folder_id, parents)
             else:
                 folder_ids = [q.folder_id]
+            # Also match document-level events for documents currently in these folders;
+            # those events record only the primary folder (timeline design §6.2).
+            document_ids = await self._store.document_ids_in_folders(folder_ids)
         return await self._store.query_events(
             categories=q.categories,
             event_types=q.event_types,
             document_id=q.document_id,
             folder_ids=folder_ids,
+            document_ids=document_ids,
             occurred_from=q.occurred_from,
             occurred_to=q.occurred_to,
             order_by=q.order_by,

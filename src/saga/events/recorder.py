@@ -112,7 +112,9 @@ class EventRecorder:
                 summary=f"Placed in {len(folders)} folder(s){because}.",
                 document_id=document_id,
                 folder_id=primary,
-                dedupe_key=f"placement:{document_id}:{','.join(sorted(folders))}",
+                # No content-hash dedupe: the caller emits only on a real change, so a
+                # later revert to a previously-seen folder set is still recorded.
+                dedupe_key=None,
                 details=details,
             )
         )
@@ -132,7 +134,9 @@ class EventRecorder:
                 summary=f"Classified as '{to_doc_type}'"
                 + (f" (was '{from_doc_type}')." if from_doc_type else "."),
                 document_id=document_id,
-                dedupe_key=f"reclassification:{document_id}:{to_doc_type}",
+                # No content-hash dedupe: the pipeline emits only on a genuine type
+                # change, so a later revert to a prior type is still recorded.
+                dedupe_key=None,
                 details={"from_doc_type": from_doc_type, "to_doc_type": to_doc_type},
             )
         )
@@ -178,5 +182,24 @@ class EventRecorder:
                 folder_id=folder_id,
                 dedupe_key=f"folder_created:{folder_id}",
                 details={"name": name, "parent_id": parent_id},
+            )
+        )
+
+    async def record_folder_renamed(
+        self,
+        *,
+        folder_id: str,
+        old_name: str,
+        new_name: str,
+        actor: str = "user",
+    ) -> None:
+        await self._safe_append(
+            self._new(
+                event_type=EventType.FOLDER_RENAMED,
+                actor=actor,
+                summary=f"Folder renamed from '{old_name}' to '{new_name}'.",
+                folder_id=folder_id,
+                dedupe_key=None,  # explicit renames are always recorded
+                details={"old_name": old_name, "new_name": new_name},
             )
         )

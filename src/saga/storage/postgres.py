@@ -26,6 +26,7 @@ from sqlalchemy import (
     UniqueConstraint,
     delete,
     func,
+    or_,
     select,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -1043,6 +1044,7 @@ class PostgresStore:
         event_types: Sequence[EventType] | None = None,
         document_id: str | None = None,
         folder_ids: Sequence[str] | None = None,
+        document_ids: Sequence[str] | None = None,
         occurred_from: datetime | None = None,
         occurred_to: datetime | None = None,
         order_by: Literal["recorded_at", "occurred_at"] = "recorded_at",
@@ -1058,18 +1060,40 @@ class PostgresStore:
             stmt = stmt.where(EventRow.event_type.in_([str(t) for t in event_types]))
         if document_id is not None:
             stmt = stmt.where(EventRow.document_id == document_id)
-        if folder_ids is not None:
-            stmt = stmt.where(EventRow.folder_id.in_(list(folder_ids)))
+        # Folder scope (design §6.2): an event is relevant to a folder if it is scoped
+        # to that folder OR concerns a document currently in that folder — because
+        # document-level events record only the primary folder. Combine the two with OR.
+        folder_clause = EventRow.folder_id.in_(list(folder_ids)) if folder_ids is not None else None
+        docids_clause = (
+            EventRow.document_id.in_(list(document_ids)) if document_ids is not None else None
+        )
+        if folder_clause is not None and docids_clause is not None:
+            stmt = stmt.where(or_(folder_clause, docids_clause))
+        elif folder_clause is not None:
+            stmt = stmt.where(folder_clause)
+        elif docids_clause is not None:
+            stmt = stmt.where(docids_clause)
         if occurred_from is not None:
             stmt = stmt.where(EventRow.occurred_at >= occurred_from)
         if occurred_to is not None:
             stmt = stmt.where(EventRow.occurred_at <= occurred_to)
         sort_col = EventRow.occurred_at if order_by == "occurred_at" else EventRow.recorded_at
-        stmt = stmt.order_by(sort_col.desc() if descending else sort_col.asc())
+        # Secondary sort on id for deterministic pagination when timestamps tie.
+        if descending:
+            stmt = stmt.order_by(sort_col.desc(), EventRow.id.desc())
+        else:
+            stmt = stmt.order_by(sort_col.asc(), EventRow.id.asc())
         stmt = stmt.limit(limit).offset(offset)
         async with self._sessions()() as session:
             rows = (await session.execute(stmt)).scalars().all()
         return [_to_event(row) for row in rows]
+
+    async def document_ids_in_folders(self, folder_ids: Sequence[str]) -> list[str]:
+        """Return ids of documents that are members of any of *folder_ids* (no subtree)."""
+        if not folder_ids:
+            return []
+        async with self._sessions()() as session:
+            return await self._folder_member_doc_ids(session, folder_ids)
 
     # ----------------------------- internals ------------------------------- #
 

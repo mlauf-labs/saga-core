@@ -1,4 +1,4 @@
-"""Tests for the get_timeline MCP tool (FR-timeline-mcp).
+"""Tests for the get_timeline MCP tool.
 
 Mirrors the harness in test_mcp_server.py: builds the server via
 ``build_server(config, services)`` against a stub ``Services`` that exposes a

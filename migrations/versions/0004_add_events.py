@@ -31,7 +31,12 @@ def upgrade() -> None:
         sa.Column("document_id", sa.String(length=32), nullable=True),
         sa.Column("folder_id", sa.String(length=32), nullable=True),
         sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "recorded_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("actor", sa.String(length=16), nullable=False),
         sa.Column("summary", sa.Text(), nullable=False),
         sa.Column("confidence", sa.Float(), nullable=True),

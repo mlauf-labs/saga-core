@@ -298,6 +298,10 @@ async def place_in_folder(
         _log.warning("placement_empty", document_id=document_id)
         return []
 
+    prior_folder_ids: set[str] = set()
+    if events is not None:
+        prior_folder_ids = {ref.folder_id for ref in await db.get_document_folders(document_id)}
+
     refs = await db.set_document_folders(
         document_id,
         folder_ids=assignments,
@@ -310,7 +314,9 @@ async def place_in_folder(
         folders=len(refs),
         primary=primary_id,
     )
-    if events is not None:
+    # Emit only when the folder set actually changed, so an idempotent re-ingest does
+    # not append a duplicate placement event (and a later revert is still recorded).
+    if events is not None and set(assignments) != prior_folder_ids:
         await events.record_placement(
             document_id=document_id,
             folders=assignments,

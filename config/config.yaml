@@ -92,9 +92,9 @@ similarity:
   max_folder_votes: 5
 
 timeline:
-  # Number of top related documents included in event rationale (FR-TL-1).
+  # Number of top related documents included in event rationale.
   rationale_top_n: 5
-  # Default and maximum page sizes for timeline list endpoints (NFR-10).
+  # Default and maximum page sizes for timeline list endpoints.
   default_page_size: 50
   max_page_size: 500
 

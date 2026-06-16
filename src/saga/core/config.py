@@ -175,11 +175,11 @@ class TimelineConfig(BaseModel):
     the pagination bounds for timeline list endpoints.
     """
 
-    # Number of top related documents to include in event rationale (FR-TL-1).
+    # Number of top related documents to include in event rationale.
     rationale_top_n: int = 5
     # Default page size for timeline list endpoints.
     default_page_size: int = 50
-    # Hard upper bound on page size to protect query performance (NFR-10).
+    # Hard upper bound on page size to protect query performance.
     max_page_size: int = 500
 
 

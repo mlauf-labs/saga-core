@@ -30,7 +30,7 @@ async def test_record_placement_builds_audit_event_with_rationale() -> None:
     assert event.category == EventCategory.AUDIT
     assert event.event_type == EventType.PLACEMENT
     assert event.actor == "pipeline"
-    assert event.dedupe_key == "placement:d1:f1"
+    assert event.dedupe_key is None  # placement is recorded on change, not content-deduped
     assert [s["title"] for s in event.details["similar"]] == ["KFZ-Police 2025", "Hausrat 2024"]
     assert "KFZ-Police 2025" in event.summary
 

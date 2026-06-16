@@ -232,7 +232,12 @@ def build_server(
     ) -> dict[str, Any]:
         if services.timeline is None:
             return {"items": [], "limit": limit, "offset": offset}
-        categories = (EventCategory(category),) if category else None
+        categories: tuple[EventCategory, ...] | None = None
+        if category is not None:
+            try:
+                categories = (EventCategory(category),)
+            except ValueError:
+                return {"error": f"Invalid category {category!r}; expected 'audit' or 'content'."}
         query = EventQuery(
             categories=categories,
             document_id=document_id,

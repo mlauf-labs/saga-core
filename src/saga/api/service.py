@@ -375,6 +375,10 @@ async def update_folder(
 ) -> Folder:
     """Update folder fields (presence in ``fields`` decides what changes)."""
     clear_parent = "parent_id" in fields and fields.get("parent_id") is None
+    old_name: str | None = None
+    if services.events is not None and "name" in fields:
+        existing = await services.db.get_folder(folder_id)
+        old_name = existing.name if existing is not None else None
     folder = await services.db.update_folder(
         folder_id,
         name=fields.get("name"),  # type: ignore[arg-type]
@@ -386,6 +390,13 @@ async def update_folder(
     )
     # Rename/move changes folder names + ancestor ids denormalised on the projection.
     await _reproject_folder_subtree(services, folder_id)
+    if services.events is not None and old_name is not None and folder.name != old_name:
+        await services.events.record_folder_renamed(
+            folder_id=folder.folder_id,
+            old_name=old_name,
+            new_name=folder.name,
+            actor="user",
+        )
     return folder
 
 
