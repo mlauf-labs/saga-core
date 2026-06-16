@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from saga.converters import ConverterRegistry
     from saga.core.config import AppConfig
     from saga.embeddings import EmbeddingProvider
+    from saga.events import EventRecorder
     from saga.llm import DocumentAnalyzer
     from saga.storage import MinioStore, OpenSearchStore, PostgresStore
 
@@ -58,6 +59,7 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
     chunker: MarkdownChunker = ctx["chunker"]
     embedder: EmbeddingProvider = ctx["embedder"]
     llm_config = ctx["llm_config"]
+    events: EventRecorder | None = ctx.get("events")
 
     # Use a noop placeholder so ``tracer.finish()`` in the finally clause is
     # always safe, even if the pipeline aborts before the document is fetched.
@@ -70,6 +72,9 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
             raise NotFoundError(f"Document '{document_id}' was not found before ingestion.")
         title = document.title
         filename = document.filename
+        previous_doc_type = document.doc_type
+        if events is not None:
+            await events.record_doc_ingested(document_id=document_id)
 
         # Build the real tracer once we have the document title — this creates
         # exactly one Langfuse root trace for the entire pipeline run.
@@ -103,6 +108,8 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
                 analyzer=analyzer,
                 allow_auto_create=llm_config.doctype_classification.allow_auto_create,
                 trace_callbacks=callbacks,
+                previous_doc_type=previous_doc_type,
+                events=events,
             )
         doc_type_name = doc_type.name if doc_type is not None else None
 
@@ -148,7 +155,7 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
             input={"document_id": document_id, "doc_type": doc_type_name},
         ):
             await db.update_status(document_id, DocumentStatus.CLASSIFYING)
-            _, votes = await compute_similarity(
+            similar, votes = await compute_similarity(
                 document_id=document_id,
                 summary=summary,
                 summary_vector=summary_vector,
@@ -177,6 +184,8 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
                     analyzer=analyzer,
                     allow_auto_create=llm_config.folder_placement.allow_auto_create,
                     trace_callbacks=callbacks,
+                    similar=similar,
+                    events=events,
                 )
 
         # Mark ready before projecting so the projection + chunks carry the final

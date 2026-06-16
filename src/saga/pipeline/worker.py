@@ -14,6 +14,7 @@ from saga.converters import ConverterRegistry, load_converters_config
 from saga.core.config import load_config
 from saga.core.logging import configure_logging, get_logger
 from saga.embeddings import build_embedding_provider, load_embeddings_config
+from saga.events import EventRecorder
 from saga.llm import (
     DocumentAnalyzer,
     PromptLibrary,
@@ -90,6 +91,7 @@ async def on_startup(ctx: dict[str, Any]) -> None:
             index_dimension=config.opensearch.vector_dimension,
             hint="Set opensearch.vector_dimension to match the embedding model and reindex.",
         )
+    events = EventRecorder(db, rationale_top_n=config.timeline.rationale_top_n)
     await db.bootstrap()
     await opensearch.bootstrap()
     await minio.bootstrap()
@@ -102,6 +104,7 @@ async def on_startup(ctx: dict[str, Any]) -> None:
     ctx["analyzer"] = analyzer
     ctx["chunker"] = chunker
     ctx["embedder"] = embedder
+    ctx["events"] = events
     _log.info("worker_ready")
 
 

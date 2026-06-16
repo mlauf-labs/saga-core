@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from saga.core.config import SimilarityConfig
     from saga.core.models import DocType, Folder, FolderRef, FolderVote, SimilarDocument
     from saga.embeddings import EmbeddingProvider
+    from saga.events import EventRecorder
     from saga.llm import DocumentAnalyzer
     from saga.llm.schemas import NewFolder
     from saga.storage import MinioStore, OpenSearchStore, PostgresStore
@@ -66,6 +67,8 @@ async def classify_doc_type(
     analyzer: DocumentAnalyzer,
     allow_auto_create: bool,
     trace_callbacks: list[Any] | None = None,
+    previous_doc_type: str | None = None,
+    events: EventRecorder | None = None,
 ) -> DocType | None:
     """Assign exactly one doc-type, reusing an existing one or creating a new (FR-14)."""
     existing = await db.list_doc_types()
@@ -92,6 +95,12 @@ async def classify_doc_type(
         return None
     await db.set_document_doc_type(document_id, doc_type.doc_type_id)
     _log.info("doc_type_assigned", document_id=document_id, doc_type=doc_type.name)
+    if events is not None and doc_type.name != previous_doc_type:
+        await events.record_reclassification(
+            document_id=document_id,
+            from_doc_type=previous_doc_type,
+            to_doc_type=doc_type.name,
+        )
     return doc_type
 
 
@@ -193,6 +202,8 @@ async def place_in_folder(
     analyzer: DocumentAnalyzer,
     allow_auto_create: bool,
     trace_callbacks: list[Any] | None = None,
+    similar: list[SimilarDocument] | None = None,
+    events: EventRecorder | None = None,
 ) -> list[FolderRef]:
     """Place the document into 1..n folders, creating new ones when needed (FR-16/17).
 
@@ -299,6 +310,14 @@ async def place_in_folder(
         folders=len(refs),
         primary=primary_id,
     )
+    if events is not None:
+        await events.record_placement(
+            document_id=document_id,
+            folders=assignments,
+            primary=primary_id,
+            similar=similar or [],
+            votes=votes,
+        )
     return refs
 
 
