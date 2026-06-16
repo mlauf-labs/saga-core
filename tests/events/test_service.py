@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from datetime import UTC, datetime
+from typing import cast
 
 from saga.core.models import Event, EventCategory, EventType
 from saga.events import EventQuery, TimelineService
@@ -14,9 +17,10 @@ class _Store:
     async def parents_map(self) -> dict[str, str | None]:
         return self._parents
 
-    async def query_events(self, **kwargs) -> list[Event]:
+    async def query_events(self, **kwargs: object) -> list[Event]:
+        folder_ids = kwargs.get("folder_ids")
         self.seen_folder_ids = (
-            list(kwargs["folder_ids"]) if kwargs.get("folder_ids") is not None else None
+            list(cast("list[str]", folder_ids)) if folder_ids is not None else None
         )
         now = datetime(2026, 5, 1, tzinfo=UTC)
         return [
@@ -31,14 +35,15 @@ class _Store:
         ]
 
 
-async def test_query_expands_folder_subtree():
+async def test_query_expands_folder_subtree() -> None:
     store = _Store({"f_root": None, "f_child": "f_root"})
     service = TimelineService(store)
     await service.query(EventQuery(folder_id="f_root", include_subtree=True))
+    assert store.seen_folder_ids is not None
     assert sorted(store.seen_folder_ids) == ["f_child", "f_root"]
 
 
-async def test_query_without_subtree_uses_single_folder():
+async def test_query_without_subtree_uses_single_folder() -> None:
     store = _Store({"f_root": None, "f_child": "f_root"})
     service = TimelineService(store)
     await service.query(EventQuery(folder_id="f_root", include_subtree=False))

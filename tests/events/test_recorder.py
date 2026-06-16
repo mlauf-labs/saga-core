@@ -14,7 +14,7 @@ class _Sink:
         return True
 
 
-async def test_record_placement_builds_audit_event_with_rationale():
+async def test_record_placement_builds_audit_event_with_rationale() -> None:
     sink = _Sink()
     recorder = EventRecorder(sink, rationale_top_n=2)
     similar = [
@@ -35,6 +35,6 @@ async def test_record_placement_builds_audit_event_with_rationale():
     assert "KFZ-Police 2025" in event.summary
 
 
-async def test_recorder_never_raises_when_sink_fails():
+async def test_recorder_never_raises_when_sink_fails() -> None:
     recorder = EventRecorder(_Sink(fail=True))
     await recorder.record_doc_ingested(document_id="d1")  # must NOT raise

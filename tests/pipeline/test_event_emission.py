@@ -11,7 +11,7 @@ class _Sink:
         return True
 
 
-async def test_recorder_records_reclassification_only_on_change():
+async def test_recorder_records_reclassification_only_on_change() -> None:
     sink = _Sink()
     recorder = EventRecorder(sink)
     await recorder.record_reclassification(

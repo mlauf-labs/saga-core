@@ -81,7 +81,7 @@ def _services_with_timeline(config: AppConfig, fake_timeline: _FakeTimelineServi
     object.__setattr__(svc, "queue", FakeQueue())
     object.__setattr__(svc, "search", AsyncMock())
     object.__setattr__(svc, "timeline", fake_timeline)
-    return svc  # type: ignore[return-value]
+    return svc
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +179,7 @@ async def test_get_timeline_returns_empty_when_timeline_is_none(config: AppConfi
     object.__setattr__(svc, "search", AsyncMock())
     object.__setattr__(svc, "timeline", None)
 
-    mcp = build_server(config, svc)  # type: ignore[arg-type]
+    mcp = build_server(config, svc)
     result = _structured(await mcp.call_tool("get_timeline", {}))
     assert result["items"] == []
 

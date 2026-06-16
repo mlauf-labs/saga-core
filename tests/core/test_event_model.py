@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from saga.core.models import Event, EventCategory, EventType
 
 
-def test_event_defaults_and_roundtrip():
+def test_event_defaults_and_roundtrip() -> None:
     now = datetime(2026, 5, 1, tzinfo=UTC)
     event = Event(
         event_id="e1",
