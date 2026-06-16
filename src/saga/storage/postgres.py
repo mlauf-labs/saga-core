@@ -999,6 +999,43 @@ class PostgresStore:
             await session.flush()
             return await self._document_folders(session, document_id)
 
+    # ------------------------------ events --------------------------------- #
+
+    async def append_event(self, event: Event) -> bool:
+        """Persist *event*; return ``False`` (no-op) if its ``dedupe_key`` already exists.
+
+        Uses a portable check-then-insert (works on Postgres and the sqlite test
+        engine). Placement runs under a global Redis lock and re-ingest is sequential
+        per document, so the check-then-insert race window is not a concern; the unique
+        index on ``dedupe_key`` is the backstop.
+        """
+        async with self._sessions()() as session, session.begin():
+            if event.dedupe_key is not None:
+                existing = (
+                    await session.execute(
+                        select(EventRow.id).where(EventRow.dedupe_key == event.dedupe_key)
+                    )
+                ).first()
+                if existing is not None:
+                    return False
+            session.add(
+                EventRow(
+                    id=event.event_id or _new_id(),
+                    category=str(event.category),
+                    event_type=str(event.event_type),
+                    document_id=event.document_id,
+                    folder_id=event.folder_id,
+                    occurred_at=event.occurred_at,
+                    recorded_at=event.recorded_at,
+                    actor=event.actor,
+                    summary=event.summary,
+                    confidence=event.confidence,
+                    dedupe_key=event.dedupe_key,
+                    details=dict(event.details),
+                )
+            )
+            return True
+
     # ----------------------------- internals ------------------------------- #
 
     async def _document_folders(self, session: AsyncSession, document_id: str) -> list[FolderRef]:
