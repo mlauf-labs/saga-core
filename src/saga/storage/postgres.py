@@ -17,6 +17,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -184,6 +185,8 @@ class EventRow(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
     category: Mapped[str] = mapped_column(String(16), nullable=False)
     event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    # No foreign keys: the audit log is append-only history that may outlive the
+    # documents/folders it references.
     document_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     folder_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -192,7 +195,7 @@ class EventRow(Base):
     )
     actor: Mapped[str] = mapped_column(String(16), nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
-    confidence: Mapped[float | None] = mapped_column(nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     dedupe_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     details: Mapped[dict[str, Any]] = mapped_column(_JSON, default=dict, nullable=False)
 
@@ -1160,8 +1163,8 @@ def _to_event(row: EventRow) -> Event:
         event_type=EventType(row.event_type),
         document_id=row.document_id,
         folder_id=row.folder_id,
-        occurred_at=row.occurred_at,
-        recorded_at=row.recorded_at,
+        occurred_at=_aware(row.occurred_at) if row.occurred_at is not None else None,
+        recorded_at=_aware(row.recorded_at),
         actor=row.actor,
         summary=row.summary,
         confidence=row.confidence,
