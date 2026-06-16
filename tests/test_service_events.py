@@ -12,8 +12,7 @@ class _DB:
 
     async def set_document_folders(self, document_id, *, folder_ids, primary_id, assigned_by):
         return [
-            FolderRef(folder_id=fid, name=fid, is_primary=(fid == primary_id))
-            for fid in folder_ids
+            FolderRef(folder_id=fid, name=fid, is_primary=(fid == primary_id)) for fid in folder_ids
         ]
 
 

@@ -59,9 +59,7 @@ class _FakeTimelineService:
         return self._events
 
 
-def _services_with_timeline(
-    config: AppConfig, fake_timeline: _FakeTimelineService
-) -> Services:
+def _services_with_timeline(config: AppConfig, fake_timeline: _FakeTimelineService) -> Services:
     """Build a minimal Services stub with a fake timeline."""
     from saga.storage.postgres import PostgresStore
     from tests.conftest import (
