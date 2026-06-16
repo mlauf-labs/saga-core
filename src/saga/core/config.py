@@ -168,6 +168,21 @@ class SimilarityConfig(BaseModel):
     max_folder_votes: int = 5
 
 
+class TimelineConfig(BaseModel):
+    """Tunables for the timeline event-log subsystem.
+
+    Controls how many rationale documents are fanned out per event query and
+    the pagination bounds for timeline list endpoints.
+    """
+
+    # Number of top related documents to include in event rationale (FR-TL-1).
+    rationale_top_n: int = 5
+    # Default page size for timeline list endpoints.
+    default_page_size: int = 50
+    # Hard upper bound on page size to protect query performance (NFR-10).
+    max_page_size: int = 500
+
+
 class RedisConfig(BaseModel):
     url: str = "redis://redis:6379/0"
 
@@ -249,6 +264,7 @@ class AppConfig(BaseModel):
     chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
     dedup: DedupConfig = Field(default_factory=DedupConfig)
     similarity: SimilarityConfig = Field(default_factory=SimilarityConfig)
+    timeline: TimelineConfig = Field(default_factory=TimelineConfig)
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
     langfuse: LangfuseConfig = Field(default_factory=LangfuseConfig)
 
@@ -321,6 +337,7 @@ def load_config(config_dir: Path | str = "config") -> AppConfig:
         "chunking",
         "dedup",
         "similarity",
+        "timeline",
         "generation",
         "langfuse",
     ):
