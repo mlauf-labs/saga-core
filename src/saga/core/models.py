@@ -10,6 +10,7 @@ projection (full text + chunk vectors + denormalised filter fields).
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -32,6 +33,51 @@ class DocumentStatus(StrEnum):
     INDEXING = "indexing"
     READY = "ready"
     FAILED = "failed"
+
+
+class EventCategory(StrEnum):
+    """Which view an event belongs to (see timeline design)."""
+
+    AUDIT = "audit"
+    CONTENT = "content"
+
+
+class EventType(StrEnum):
+    """The kind of event. Audit types are emitted by code; content types by the LLM."""
+
+    # audit (Phase 1)
+    DOC_INGESTED = "doc_ingested"
+    PLACEMENT = "placement"
+    MOVE = "move"
+    RECLASSIFICATION = "reclassification"
+    FOLDER_CREATED = "folder_created"
+    FOLDER_RENAMED = "folder_renamed"
+    # content (Phase 2/3)
+    DATED_FACT = "dated_fact"
+    APPOINTMENT = "appointment"
+    RECURRING = "recurring"
+
+
+class Event(BaseModel):
+    """A single timeline event (system of record: Postgres ``events`` table).
+
+    ``occurred_at`` is the event time (content: real-world date; audit: equals
+    ``recorded_at``). ``recorded_at`` is the archive time the row was written.
+    ``dedupe_key`` makes re-emitted identical audit events a no-op.
+    """
+
+    event_id: str
+    category: EventCategory
+    event_type: EventType
+    document_id: str | None = None
+    folder_id: str | None = None
+    occurred_at: datetime | None = None
+    recorded_at: datetime
+    actor: str
+    summary: str
+    confidence: float | None = None
+    dedupe_key: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExtractedValue(BaseModel):
