@@ -32,6 +32,11 @@ _FALLBACK_CONTENT_TYPE = "application/octet-stream"
 _REPROJECT_PAGE = 200
 
 
+def _actor_from_assigned_by(assigned_by: str) -> str:
+    """Map the membership ``assigned_by`` value to a timeline actor."""
+    return "agent" if assigned_by == "llm" else "user"
+
+
 def compute_content_hash(data: bytes) -> str:
     """Return the SHA-256 hex digest of ``data`` (used for dedup, FR-13)."""
     return hashlib.sha256(data).hexdigest()
@@ -250,10 +255,20 @@ async def set_document_folders(
     primary_id: str | None = None,
     assigned_by: str = "user",
 ) -> list[FolderRef]:
+    before = await services.db.get_document_folders(document_id)
     refs = await services.db.set_document_folders(
         document_id, folder_ids=folder_ids, primary_id=primary_id, assigned_by=assigned_by
     )
     await reproject(services, document_id)
+    if services.events is not None:
+        primary = next((r.folder_id for r in refs if r.is_primary), None)
+        await services.events.record_move(
+            document_id=document_id,
+            from_folders=[r.folder_id for r in before],
+            to_folders=[r.folder_id for r in refs],
+            primary=primary,
+            actor=_actor_from_assigned_by(assigned_by),
+        )
     return refs
 
 
@@ -265,26 +280,56 @@ async def add_document_folder(
     primary: bool = False,
     assigned_by: str = "user",
 ) -> list[FolderRef]:
+    before = await services.db.get_document_folders(document_id)
     refs = await services.db.add_document_folder(
         document_id, folder_id, primary=primary, assigned_by=assigned_by
     )
     await reproject(services, document_id)
+    if services.events is not None:
+        primary_id = next((r.folder_id for r in refs if r.is_primary), None)
+        await services.events.record_move(
+            document_id=document_id,
+            from_folders=[r.folder_id for r in before],
+            to_folders=[r.folder_id for r in refs],
+            primary=primary_id,
+            actor=_actor_from_assigned_by(assigned_by),
+        )
     return refs
 
 
 async def remove_document_folder(
     services: Services, document_id: str, folder_id: str
 ) -> list[FolderRef]:
+    before = await services.db.get_document_folders(document_id)
     refs = await services.db.remove_document_folder(document_id, folder_id)
     await reproject(services, document_id)
+    if services.events is not None:
+        primary = next((r.folder_id for r in refs if r.is_primary), None)
+        await services.events.record_move(
+            document_id=document_id,
+            from_folders=[r.folder_id for r in before],
+            to_folders=[r.folder_id for r in refs],
+            primary=primary,
+            actor="user",
+        )
     return refs
 
 
 async def set_primary_folder(
     services: Services, document_id: str, folder_id: str
 ) -> list[FolderRef]:
+    before = await services.db.get_document_folders(document_id)
     refs = await services.db.set_primary_folder(document_id, folder_id)
     await reproject(services, document_id)
+    if services.events is not None:
+        primary = next((r.folder_id for r in refs if r.is_primary), None)
+        await services.events.record_move(
+            document_id=document_id,
+            from_folders=[r.folder_id for r in before],
+            to_folders=[r.folder_id for r in refs],
+            primary=primary,
+            actor="user",
+        )
     return refs
 
 
@@ -302,9 +347,17 @@ async def create_folder(
     metadata: dict[str, str] | None = None,
     emoji: str | None = None,
 ) -> Folder:
-    return await services.db.create_folder(
+    folder = await services.db.create_folder(
         name=name, description=description, parent_id=parent_id, metadata=metadata, emoji=emoji
     )
+    if services.events is not None:
+        await services.events.record_folder_created(
+            folder_id=folder.folder_id,
+            name=folder.name,
+            parent_id=folder.parent_id,
+            actor="user",
+        )
+    return folder
 
 
 async def get_folder(services: Services, folder_id: str) -> Folder:
