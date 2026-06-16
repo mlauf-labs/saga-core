@@ -114,10 +114,6 @@ After review + green CI, **squash-merge** into `develop`. Promote to `main` via 
 - **Conventional Commits** — `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`,
   `ci:`, `build:`, `perf:`. Reference requirement IDs (e.g. `FR-19`) where useful.
   Imperative mood, English. Release notes are generated from commit history.
-- For Claude-authored commits, end the message with:
-  ```
-  Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
-  ```
 - Never `--no-verify`, never force-push shared branches, never commit secrets or build artifacts.
 
 ## CI
