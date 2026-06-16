@@ -55,3 +55,43 @@ async def test_append_event_without_key_always_inserts(store):
     assert await store.append_event(_audit(None)) is True
     assert await store.append_event(_audit(None)) is True
     assert await _count_events(store) == 2
+
+
+def _event(**kw) -> Event:
+    now = datetime(2026, 5, 1, tzinfo=UTC)
+    base: dict[str, object] = {
+        "event_id": "",
+        "category": EventCategory.AUDIT,
+        "event_type": EventType.PLACEMENT,
+        "document_id": "d1",
+        "folder_id": "f1",
+        "occurred_at": now,
+        "recorded_at": now,
+        "actor": "pipeline",
+        "summary": "s",
+        "dedupe_key": None,
+    }
+    base.update(kw)
+    return Event(**base)  # type: ignore[arg-type]
+
+
+async def test_query_events_filters_by_category_and_document(store):
+    await store.append_event(_event(event_type=EventType.PLACEMENT, document_id="d1"))
+    await store.append_event(_event(event_type=EventType.MOVE, document_id="d2", folder_id="f2"))
+
+    only_d1 = await store.query_events(document_id="d1")
+    assert [e.document_id for e in only_d1] == ["d1"]
+
+    audits = await store.query_events(categories=[EventCategory.AUDIT])
+    assert len(audits) == 2
+
+    moves = await store.query_events(event_types=[EventType.MOVE])
+    assert [e.event_type for e in moves] == [EventType.MOVE]
+
+
+async def test_query_events_filters_by_folder_ids_and_limits(store):
+    for fid in ("f1", "f2", "f3"):
+        await store.append_event(_event(folder_id=fid))
+    hits = await store.query_events(folder_ids=["f1", "f3"])
+    assert sorted(e.folder_id for e in hits) == ["f1", "f3"]
+    assert len(await store.query_events(limit=1)) == 1

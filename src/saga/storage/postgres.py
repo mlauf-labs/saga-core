@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy import (
     JSON,
@@ -1035,6 +1035,41 @@ class PostgresStore:
                 )
             )
             return True
+
+    async def query_events(
+        self,
+        *,
+        categories: Sequence[EventCategory] | None = None,
+        event_types: Sequence[EventType] | None = None,
+        document_id: str | None = None,
+        folder_ids: Sequence[str] | None = None,
+        occurred_from: datetime | None = None,
+        occurred_to: datetime | None = None,
+        order_by: Literal["recorded_at", "occurred_at"] = "recorded_at",
+        descending: bool = True,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[Event]:
+        """Read events with optional filters. Folder subtree expansion is the caller's job."""
+        stmt = select(EventRow)
+        if categories:
+            stmt = stmt.where(EventRow.category.in_([str(c) for c in categories]))
+        if event_types:
+            stmt = stmt.where(EventRow.event_type.in_([str(t) for t in event_types]))
+        if document_id is not None:
+            stmt = stmt.where(EventRow.document_id == document_id)
+        if folder_ids is not None:
+            stmt = stmt.where(EventRow.folder_id.in_(list(folder_ids)))
+        if occurred_from is not None:
+            stmt = stmt.where(EventRow.occurred_at >= occurred_from)
+        if occurred_to is not None:
+            stmt = stmt.where(EventRow.occurred_at <= occurred_to)
+        sort_col = EventRow.occurred_at if order_by == "occurred_at" else EventRow.recorded_at
+        stmt = stmt.order_by(sort_col.desc() if descending else sort_col.asc())
+        stmt = stmt.limit(limit).offset(offset)
+        async with self._sessions()() as session:
+            rows = (await session.execute(stmt)).scalars().all()
+        return [_to_event(row) for row in rows]
 
     # ----------------------------- internals ------------------------------- #
 
