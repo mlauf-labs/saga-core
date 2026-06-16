@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from saga.core.models import (
     Document,
     DocumentStatus,
+    Event,
     ExtractedValue,
     FolderRef,
     Note,
@@ -222,3 +223,11 @@ class ExportPageResponse(BaseModel):
 
     items: list[DocumentResponse]
     next_cursor: str | None = None
+
+
+class TimelineResponse(BaseModel):
+    """A page of timeline events (audit and/or content)."""
+
+    items: list[Event]
+    limit: int
+    offset: int
