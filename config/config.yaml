@@ -97,6 +97,8 @@ timeline:
   # Default and maximum page sizes for timeline list endpoints.
   default_page_size: 50
   max_page_size: 500
+  # Minimum confidence for an extracted content/timeline event to be kept.
+  content_min_confidence: 0.5
 
 generation:
   # Natural language used for LLM-generated content: summaries, folder names/descriptions,
