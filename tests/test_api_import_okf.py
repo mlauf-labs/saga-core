@@ -112,7 +112,10 @@ async def test_import_okf_restores_bundle(store: PostgresStore, services: Servic
     src_engine = create_async_engine("sqlite+aiosqlite://")
     src = PostgresStore(config=None, engine=src_engine)  # type: ignore[arg-type]
     await src.bootstrap()
-    bundle = await _bundle_bytes(src, InMemoryBinaryStore())
+    try:
+        bundle = await _bundle_bytes(src, InMemoryBinaryStore())
+    finally:
+        await src.close()
 
     app = create_app(services.config, services=services)
     with TestClient(app) as client:
