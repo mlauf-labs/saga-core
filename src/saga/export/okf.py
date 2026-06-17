@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Protocol
 
 import yaml
 
+from saga.core.models import EventCategory
+
 if TYPE_CHECKING:
     from saga.core.models import Document, Event, Folder
     from saga.events import EventQuery
@@ -123,4 +125,23 @@ def render_index(
         lines += ["## Subfolders", *_bullets(subfolders), ""]
     if documents:
         lines += ["## Documents", *_bullets(documents), ""]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_log(heading: str, events: list[Event]) -> str:
+    """Render an OKF log.md: date-grouped (newest first), each line tagged [category] type.
+
+    Audit events group by ``recorded_at``; content events by ``occurred_at``.
+    *events* arrive newest-first (recorded_at desc); per-day order is preserved.
+    """
+    groups: dict[str, list[Event]] = {}
+    for ev in events:
+        when = ev.occurred_at if ev.category == EventCategory.CONTENT else ev.recorded_at
+        day = (when or ev.recorded_at).date().isoformat()
+        groups.setdefault(day, []).append(ev)
+    lines: list[str] = [f"# {heading}", ""]
+    for day in sorted(groups, reverse=True):
+        lines.append(f"## {day}")
+        lines += [f"* **[{ev.category}] {ev.event_type}** — {ev.summary}" for ev in groups[day]]
+        lines.append("")
     return "\n".join(lines).rstrip() + "\n"

@@ -4,8 +4,16 @@ from datetime import UTC, datetime
 
 import yaml
 
-from saga.core.models import Document, ExtractedValue, FolderRef, Note
-from saga.export.okf import render_concept, render_index, resource_uri
+from saga.core.models import (
+    Document,
+    Event,
+    EventCategory,
+    EventType,
+    ExtractedValue,
+    FolderRef,
+    Note,
+)
+from saga.export.okf import render_concept, render_index, render_log, resource_uri
 
 
 def _doc(**kw: object) -> Document:
@@ -75,3 +83,33 @@ def test_render_index_lists_subfolders_and_documents() -> None:
     assert "* [Rechnung ACME](Rechnung-ACME__d1.md) — One invoice." in text
     assert "* [Notiz](Notiz__d2.md)" in text
     assert "Notiz__d2.md) —" not in text  # no description → no em-dash suffix
+
+
+def _event(
+    category: EventCategory, etype: EventType, *, occurred: str, recorded: str, summary: str
+) -> Event:
+    return Event(
+        event_id="e",
+        category=category,
+        event_type=etype,
+        occurred_at=datetime.fromisoformat(occurred),
+        recorded_at=datetime.fromisoformat(recorded),
+        actor="pipeline",
+        summary=summary,
+    )
+
+
+def test_render_log_groups_by_date_newest_first_with_category_tags() -> None:
+    events = [
+        _event(EventCategory.AUDIT, EventType.PLACEMENT,
+               occurred="2026-06-13T10:00:00+00:00", recorded="2026-06-13T10:00:00+00:00",
+               summary="Placed in 1 folder."),
+        _event(EventCategory.CONTENT, EventType.APPOINTMENT,
+               occurred="2026-05-01T00:00:00+00:00", recorded="2026-06-13T10:00:00+00:00",
+               summary="Policy expiry."),
+    ]
+    text = render_log("Änderungsverlauf — Finanzen", events)
+    assert text.startswith("# Änderungsverlauf — Finanzen")
+    assert text.index("## 2026-06-13") < text.index("## 2026-05-01")  # newest first
+    assert "* **[audit] placement** — Placed in 1 folder." in text
+    assert "* **[content] appointment** — Policy expiry." in text
