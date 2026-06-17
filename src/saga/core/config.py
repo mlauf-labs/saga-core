@@ -183,6 +183,10 @@ class TimelineConfig(BaseModel):
     max_page_size: int = 500
     # Minimum LLM relevance/confidence for a content/timeline event to be kept.
     content_min_confidence: float = 0.5
+    # Default horizon (in days) for recurrence expansion and the agenda view.
+    recurrence_horizon_days: int = 366
+    # Per-rule safety cap on expanded occurrences (guards against pathological RRULEs).
+    max_occurrences_per_rule: int = 366
 
 
 class ExportConfig(BaseModel):

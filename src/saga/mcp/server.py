@@ -253,6 +253,32 @@ def build_server(
             "offset": query.offset,
         }
 
+    async def get_agenda(
+        folder_id: Annotated[
+            str | None, Field(description="Restrict to a folder (and its subtree).")
+        ] = None,
+        limit: Annotated[int, Field(description="Max events to return.")] = 50,
+        offset: Annotated[int, Field(description="Pagination offset.")] = 0,
+    ) -> dict[str, Any]:
+        if services.timeline is None:
+            return {"items": [], "limit": limit, "offset": offset}
+        query = EventQuery(
+            categories=(EventCategory.CONTENT,),
+            folder_id=folder_id,
+            include_subtree=True,
+            order_by="occurred_at",
+            descending=False,
+            expand_recurrences=True,
+            limit=min(limit, services.config.timeline.max_page_size),
+            offset=offset,
+        )
+        events = await services.timeline.query(query)
+        return {
+            "items": [e.model_dump(mode="json") for e in events],
+            "limit": query.limit,
+            "offset": query.offset,
+        }
+
     # --------------------------- write tools ------------------------------- #
 
     async def update_document_metadata(
@@ -464,6 +490,7 @@ def build_server(
         list_documents_in_folder,
         list_doc_types,
         get_timeline,
+        get_agenda,
         update_document_metadata,
         assign_document_to_folder,
         remove_document_from_folder,

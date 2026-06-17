@@ -10,9 +10,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from saga.core.models import ExtractedValue
+from saga.llm.rrule import validate_rrule
 
 # Applied to every LLM-filled schema: trim stray whitespace the model adds and
 # silently drop any extra keys it returns, avoiding needless validation retries.
@@ -256,6 +257,14 @@ class TimelineEventOut(BaseModel):
             elif value == "":
                 coerced[key] = None
         return coerced
+
+    @field_validator("recurrence")
+    @classmethod
+    def _validate_recurrence(cls, value: str | None) -> str | None:
+        """Reject invalid RRULEs so saidex makes the LLM self-correct (Phase 3)."""
+        if value is None or value == "":
+            return value
+        return validate_rrule(value)
 
 
 class TimelineExtraction(BaseModel):

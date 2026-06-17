@@ -10,7 +10,7 @@ from fastapi import APIRouter, Query
 from saga.api.dependencies import AuthDep, ServicesDep
 from saga.api.schemas import TimelineResponse
 from saga.core.errors import SagaError
-from saga.core.models import EventCategory, EventType  # noqa: TC001
+from saga.core.models import EventCategory, EventType
 from saga.events import EventQuery
 
 router = APIRouter(tags=["timeline"], dependencies=[AuthDep])
@@ -29,6 +29,7 @@ def _build_query(
     order_by: str,
     limit: int,
     offset: int,
+    expand_recurrences: bool = False,
 ) -> EventQuery:
     cfg = services.config.timeline
     effective_limit = min(limit or cfg.default_page_size, cfg.max_page_size)
@@ -43,6 +44,7 @@ def _build_query(
         order_by="occurred_at" if order_by == "occurred_at" else "recorded_at",
         limit=effective_limit,
         offset=offset,
+        expand_recurrences=expand_recurrences,
     )
 
 
@@ -61,6 +63,7 @@ async def get_timeline(
     order_by: Annotated[str, Query(pattern="^(recorded_at|occurred_at)$")] = "recorded_at",
     limit: Annotated[int, Query(ge=0)] = 0,
     offset: Annotated[int, Query(ge=0)] = 0,
+    expand: Annotated[bool, Query(description="Expand recurring rules into occurrences.")] = False,
 ) -> TimelineResponse:
     if services.timeline is None:  # pragma: no cover - defensive
         raise SagaError("Timeline service is not initialised.")
@@ -76,6 +79,7 @@ async def get_timeline(
         order_by=order_by,
         limit=limit,
         offset=offset,
+        expand_recurrences=expand,
     )
     events = await services.timeline.query(query)
     return TimelineResponse(items=events, limit=query.limit, offset=query.offset)
@@ -107,6 +111,41 @@ async def get_document_timeline(
         occurred_to=None,
         order_by=order_by,
         limit=limit,
+        offset=offset,
+    )
+    events = await services.timeline.query(query)
+    return TimelineResponse(items=events, limit=query.limit, offset=query.offset)
+
+
+@router.get(
+    "/agenda",
+    response_model=TimelineResponse,
+    summary="Upcoming events (recurrences expanded)",
+)
+async def get_agenda(
+    services: ServicesDep,
+    folder_id: Annotated[
+        str | None, Query(description="Folder scope (subtree by default).")
+    ] = None,
+    from_: Annotated[datetime | None, Query(alias="from")] = None,
+    to: Annotated[datetime | None, Query()] = None,
+    limit: Annotated[int, Query(ge=0)] = 0,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> TimelineResponse:
+    if services.timeline is None:  # pragma: no cover - defensive
+        raise SagaError("Timeline service is not initialised.")
+    cfg = services.config.timeline
+    effective_limit = min(limit or cfg.default_page_size, cfg.max_page_size)
+    query = EventQuery(
+        categories=(EventCategory.CONTENT,),
+        folder_id=folder_id,
+        include_subtree=True,
+        occurred_from=from_,
+        occurred_to=to,
+        order_by="occurred_at",
+        descending=False,
+        expand_recurrences=True,
+        limit=effective_limit,
         offset=offset,
     )
     events = await services.timeline.query(query)
