@@ -139,6 +139,19 @@ def render_events_jsonl(events: list[Event]) -> str:
     )
 
 
+def render_notes_suffix(note_contents: list[str]) -> str:
+    """Render the trailing ``## Notes`` section appended to a concept body.
+
+    Returns ``""`` when there are no notes. The import side reconstructs this exact
+    string from ``saga_notes`` and strips it to recover ``content_markdown`` bit-for-bit,
+    so the two sides MUST stay in lockstep — that is why this is one shared function.
+    """
+    if not note_contents:
+        return ""
+    notes = "\n".join(f"- {content}" for content in note_contents)
+    return f"\n## Notes\n\n{notes}\n"
+
+
 def render_concept(document: Document, *, store_name: str, public_base_url: str | None) -> str:
     """Render a concept file: YAML frontmatter, the markdown body, and an optional Notes section."""
     block = yaml.safe_dump(
@@ -150,9 +163,7 @@ def render_concept(document: Document, *, store_name: str, public_base_url: str 
     body = document.content_markdown or ""
     if body:
         parts.append(f"\n{body}\n")
-    if document.notes:
-        notes = "\n".join(f"- {n.content}" for n in document.notes)
-        parts.append(f"\n## Notes\n\n{notes}\n")
+    parts.append(render_notes_suffix([n.content for n in document.notes]))
     return "".join(parts)
 
 
