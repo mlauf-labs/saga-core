@@ -1,19 +1,22 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 import yaml
 
 from saga.core.models import (
     Document,
+    DocType,
     Event,
     EventCategory,
     EventType,
     ExtractedValue,
+    Folder,
     FolderRef,
     Note,
 )
-from saga.export.okf import render_concept, render_index, render_log, resource_uri
+from saga.export.okf import render_concept, render_index, render_log, render_manifest, resource_uri
 
 
 def _doc(**kw: object) -> Document:
@@ -129,3 +132,65 @@ def test_render_log_groups_by_date_newest_first_with_category_tags() -> None:
     assert text.index("## 2026-06-13") < text.index("## 2026-05-01")  # newest first
     assert "* **[audit] placement** — Placed in 1 folder." in text
     assert "* **[content] appointment** — Policy expiry." in text
+
+
+def test_render_manifest_maps_folders_and_doc_types() -> None:
+    now = datetime(2026, 5, 1, tzinfo=UTC)
+    folders = [
+        Folder(
+            folder_id="f-root",
+            name="Finanzen",
+            description="Money",
+            emoji="💰",
+            parent_id=None,
+            metadata={"color": "green"},
+            created_at=now,
+            updated_at=now,
+        ),
+        Folder(
+            folder_id="f-child",
+            name="2026",
+            description=None,
+            emoji=None,
+            parent_id="f-root",
+            metadata={},
+            created_at=now,
+            updated_at=now,
+        ),
+    ]
+    doc_types = [
+        DocType(
+            doc_type_id="dt1",
+            name="invoice",
+            description="A bill.",
+            emoji="📄",
+            created_at=now,
+            updated_at=now,
+        )
+    ]
+
+    manifest = json.loads(render_manifest("saga", folders, doc_types))
+
+    assert manifest["version"] == "1"
+    assert manifest["store"] == "saga"
+    assert manifest["folders"] == [
+        {
+            "id": "f-root",
+            "name": "Finanzen",
+            "parent_id": None,
+            "description": "Money",
+            "emoji": "💰",
+            "metadata": {"color": "green"},
+        },
+        {
+            "id": "f-child",
+            "name": "2026",
+            "parent_id": "f-root",
+            "description": None,
+            "emoji": None,
+            "metadata": {},
+        },
+    ]
+    assert manifest["doc_types"] == [
+        {"id": "dt1", "name": "invoice", "description": "A bill.", "emoji": "📄"}
+    ]

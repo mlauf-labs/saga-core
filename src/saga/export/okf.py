@@ -8,6 +8,7 @@ log.md. FastAPI-independent; the REST route streams the builder's output as a .t
 from __future__ import annotations
 
 import io
+import json
 import tarfile
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
@@ -21,7 +22,7 @@ from saga.events import EventQuery
 from saga.scripts.layout import backup_basename, sanitize_component
 
 if TYPE_CHECKING:
-    from saga.core.models import Document, Event, Folder
+    from saga.core.models import Document, DocType, Event, Folder
 
 _log = get_logger("saga.export")
 
@@ -91,6 +92,42 @@ def _frontmatter(
         for n in document.notes
     ]
     return fm
+
+
+def render_manifest(
+    store_name: str, folders: list[Folder], doc_types: list[DocType]
+) -> str:
+    """Render the machine-readable ``saga-manifest.json`` (folders + doc-types).
+
+    OKF consumers ignore non-markdown files; the SAGA import uses this for the exact
+    folder-tree restore (and the source-folder-id -> new-folder-id map) and to restore
+    doc-type descriptions/emoji that the concept frontmatter does not carry.
+    """
+    manifest = {
+        "version": "1",
+        "store": store_name,
+        "folders": [
+            {
+                "id": f.folder_id,
+                "name": f.name,
+                "parent_id": f.parent_id,
+                "description": f.description,
+                "emoji": f.emoji,
+                "metadata": f.metadata,
+            }
+            for f in folders
+        ],
+        "doc_types": [
+            {
+                "id": dt.doc_type_id,
+                "name": dt.name,
+                "description": dt.description,
+                "emoji": dt.emoji,
+            }
+            for dt in doc_types
+        ],
+    }
+    return json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
 
 
 def render_concept(document: Document, *, store_name: str, public_base_url: str | None) -> str:
