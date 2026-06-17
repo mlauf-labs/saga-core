@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import yaml
 
 from saga.core.models import Document, ExtractedValue, FolderRef, Note
-from saga.export.okf import render_concept, resource_uri
+from saga.export.okf import render_concept, render_index, resource_uri
 
 
 def _doc(**kw: object) -> Document:
@@ -59,3 +59,19 @@ def test_render_concept_frontmatter_body_and_notes() -> None:
     assert fm["saga_notes"][0]["content"] == "Check me"
     assert "# Body" in body
     assert "## Notes" in body and "Check me" in body
+
+
+def test_render_index_lists_subfolders_and_documents() -> None:
+    text = render_index(
+        "Finanzen",
+        subfolders=[("2026", "2026/index.md", "Year 2026")],
+        documents=[("Rechnung ACME", "Rechnung-ACME__d1.md", "One invoice."),
+                   ("Notiz", "Notiz__d2.md", None)],
+    )
+    assert text.startswith("# Finanzen")
+    assert "## Subfolders" in text
+    assert "* [2026](2026/index.md) — Year 2026" in text
+    assert "## Documents" in text
+    assert "* [Rechnung ACME](Rechnung-ACME__d1.md) — One invoice." in text
+    assert "* [Notiz](Notiz__d2.md)" in text
+    assert "Notiz__d2.md) —" not in text  # no description → no em-dash suffix

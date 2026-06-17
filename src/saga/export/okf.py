@@ -98,3 +98,29 @@ def render_concept(document: Document, *, store_name: str, public_base_url: str 
         notes = "\n".join(f"- {n.content}" for n in document.notes)
         parts.append(f"\n## Notes\n\n{notes}\n")
     return "".join(parts)
+
+
+def _bullets(entries: list[tuple[str, str, str | None]]) -> list[str]:
+    lines: list[str] = []
+    for text, href, desc in entries:
+        suffix = f" — {desc}" if desc else ""
+        lines.append(f"* [{text}]({href}){suffix}")
+    return lines
+
+
+def render_index(
+    heading: str,
+    *,
+    subfolders: list[tuple[str, str, str | None]],
+    documents: list[tuple[str, str, str | None]],
+) -> str:
+    """Render an OKF index.md (no frontmatter): heading + Subfolders + Documents bullet lists.
+
+    Each entry is ``(link_text, bundle_relative_href, description_or_None)``.
+    """
+    lines: list[str] = [f"# {heading}", ""]
+    if subfolders:
+        lines += ["## Subfolders", *_bullets(subfolders), ""]
+    if documents:
+        lines += ["## Documents", *_bullets(documents), ""]
+    return "\n".join(lines).rstrip() + "\n"
