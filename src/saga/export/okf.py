@@ -32,6 +32,7 @@ class DocumentSource(Protocol):
         self, *, page_size: int, after_id: str | None = ...
     ) -> tuple[list[Document], str | None]: ...
     async def list_folders(self) -> list[Folder]: ...
+    async def list_doc_types(self) -> list[DocType]: ...
     async def parents_map(self) -> dict[str, str | None]: ...
 
 
@@ -247,6 +248,7 @@ class OkfBundleBuilder:
     async def write_bundle(self, tar: tarfile.TarFile) -> None:
         documents = await self._all_documents()
         folders = await self._db.list_folders()
+        doc_types = await self._db.list_doc_types()
         parents = await self._db.parents_map()
         path_by_id = _folder_paths(folders, parents)
         root = f"okf-{self._store_name}-{datetime.now(UTC):%Y%m%d_%H%M%S}"
@@ -269,6 +271,19 @@ class OkfBundleBuilder:
             tar,
             f"{root}/index.md",
             render_index("Index", subfolders=root_subfolders, documents=[]),
+        )
+        # Machine-readable extras for a faithful SAGA round-trip. OKF consumers ignore
+        # non-markdown files; the SAGA import uses these for exact restore.
+        # See docs/superpowers/specs/2026-06-17-okf-faithful-round-trip-design.md.
+        self._add(
+            tar,
+            f"{root}/saga-manifest.json",
+            render_manifest(self._store_name, folders, doc_types),
+        )
+        self._add(
+            tar,
+            f"{root}/saga-events.jsonl",
+            render_events_jsonl(await self._all_events()),
         )
 
         for folder in folders:
@@ -339,6 +354,21 @@ class OkfBundleBuilder:
                     folder_id=folder_id, include_subtree=False, limit=self._page_size, offset=offset
                 )
             )
+            out.extend(page)
+            if len(page) < self._page_size:
+                return out
+            offset += self._page_size
+
+    async def _all_events(self) -> list[Event]:
+        """Page every event (audit + content, all folders) via the timeline read path.
+
+        ``EventQuery`` with ``folder_id=None`` applies no folder/document filter, so the
+        store returns all events; we page by offset until a short page.
+        """
+        out: list[Event] = []
+        offset = 0
+        while True:
+            page = await self._timeline.query(EventQuery(limit=self._page_size, offset=offset))
             out.extend(page)
             if len(page) < self._page_size:
                 return out
