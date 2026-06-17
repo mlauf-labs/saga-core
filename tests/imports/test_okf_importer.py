@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -43,7 +44,7 @@ def _importer(store: PostgresStore) -> OkfBundleImporter:
 
 async def test_restore_doc_types_idempotent(store: PostgresStore) -> None:
     importer = _importer(store)
-    doc_types = [
+    doc_types: list[dict[str, Any]] = [
         {"id": "src1", "name": "invoice", "description": "A bill.", "emoji": "📄"},
         {"id": "src2", "name": "contract", "description": None, "emoji": None},
     ]
@@ -56,7 +57,7 @@ async def test_restore_doc_types_idempotent(store: PostgresStore) -> None:
 
 async def test_restore_folders_topological_with_id_map(store: PostgresStore) -> None:
     importer = _importer(store)
-    folders = [
+    folders: list[dict[str, Any]] = [
         {
             "id": "c",
             "name": "2026",
@@ -107,7 +108,9 @@ async def test_load_manifest_and_events(tmp_path: Path, store: PostgresStore) ->
         json.dumps(ev.model_dump(mode="json")) + "\n", encoding="utf-8"
     )
 
-    assert importer._load_manifest(tmp_path)["store"] == "saga"
+    manifest = importer._load_manifest(tmp_path)
+    assert manifest is not None
+    assert manifest["store"] == "saga"
     loaded = importer._load_events(tmp_path)
     assert [e.event_id for e in loaded] == ["e1"]
     assert importer._load_manifest(tmp_path / "nonexistent-empty") is None
