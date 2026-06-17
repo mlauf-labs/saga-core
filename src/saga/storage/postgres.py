@@ -1037,6 +1037,46 @@ class PostgresStore:
             )
             return True
 
+    async def restore_events(self, events: list[Event]) -> int:
+        """Insert *events* verbatim, skipping any whose ``event_id`` already exists.
+
+        Used by the OKF import to restore the timeline exactly. Idempotent by
+        ``event_id`` (re-importing the same bundle inserts nothing). Returns the number
+        of events actually inserted.
+        """
+        if not events:
+            return 0
+        async with self._sessions()() as session, session.begin():
+            ids = [e.event_id for e in events]
+            existing = {
+                row[0]
+                for row in (
+                    await session.execute(select(EventRow.id).where(EventRow.id.in_(ids)))
+                ).all()
+            }
+            restored = 0
+            for event in events:
+                if event.event_id in existing:
+                    continue
+                session.add(
+                    EventRow(
+                        id=event.event_id,
+                        category=str(event.category),
+                        event_type=str(event.event_type),
+                        document_id=event.document_id,
+                        folder_id=event.folder_id,
+                        occurred_at=event.occurred_at,
+                        recorded_at=event.recorded_at,
+                        actor=event.actor,
+                        summary=event.summary,
+                        confidence=event.confidence,
+                        dedupe_key=event.dedupe_key,
+                        details=dict(event.details),
+                    )
+                )
+                restored += 1
+            return restored
+
     async def query_events(
         self,
         *,
