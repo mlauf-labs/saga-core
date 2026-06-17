@@ -7,15 +7,23 @@ log.md. FastAPI-independent; the REST route streams the builder's output as a .t
 
 from __future__ import annotations
 
+import io
+import tarfile
+from datetime import UTC, datetime
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Protocol
 
 import yaml
 
+from saga.core.logging import get_logger
 from saga.core.models import EventCategory
+from saga.events import EventQuery
+from saga.scripts.layout import backup_basename, sanitize_component
 
 if TYPE_CHECKING:
     from saga.core.models import Document, Event, Folder
-    from saga.events import EventQuery
+
+_log = get_logger("saga.export")
 
 
 class DocumentSource(Protocol):
@@ -145,3 +153,155 @@ def render_log(heading: str, events: list[Event]) -> str:
         lines += [f"* **[{ev.category}] {ev.event_type}** — {ev.summary}" for ev in groups[day]]
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _folder_paths(folders: list[Folder], parents: dict[str, str | None]) -> dict[str, list[str]]:
+    names = {f.folder_id: f.name for f in folders}
+    out: dict[str, list[str]] = {}
+    for fid in names:
+        chain: list[str] = []
+        cur: str | None = fid
+        while cur is not None and cur in names:
+            chain.append(names[cur])
+            cur = parents.get(cur)
+        out[fid] = list(reversed(chain))
+    return out
+
+
+def _concept_filename(document: Document) -> str:
+    return f"{backup_basename(document.document_id, document.title)}.md"
+
+
+def _original_filename(document: Document) -> str:
+    suffix = PurePosixPath(document.filename).suffix
+    return f"{backup_basename(document.document_id, document.title)}{suffix}"
+
+
+class OkfBundleBuilder:
+    """Builds an OKF bundle into a tar archive (FastAPI-independent)."""
+
+    def __init__(
+        self,
+        *,
+        db: DocumentSource,
+        minio: BinaryReader,
+        timeline: TimelineReader,
+        store_name: str,
+        public_base_url: str | None,
+        with_originals: bool = False,
+        page_size: int = 200,
+    ) -> None:
+        self._db = db
+        self._minio = minio
+        self._timeline = timeline
+        self._store_name = store_name
+        self._public_base_url = public_base_url
+        self._with_originals = with_originals
+        self._page_size = page_size
+
+    async def write_bundle(self, tar: tarfile.TarFile) -> None:
+        documents = await self._all_documents()
+        folders = await self._db.list_folders()
+        parents = await self._db.parents_map()
+        path_by_id = _folder_paths(folders, parents)
+        root = f"okf-{self._store_name}-{datetime.now(UTC):%Y%m%d_%H%M%S}"
+
+        children: dict[str | None, list[Folder]] = {}
+        for f in folders:
+            children.setdefault(f.parent_id, []).append(f)
+        docs_by_folder: dict[str | None, list[Document]] = {}
+        for d in documents:
+            docs_by_folder.setdefault(d.primary_folder_id, []).append(d)
+
+        has_unfiled = bool(docs_by_folder.get(None))
+        top = sorted(children.get(None, []), key=lambda f: f.name)
+        root_subfolders = [
+            (f.name, f"{sanitize_component(f.name)}/index.md", f.description) for f in top
+        ]
+        if has_unfiled:
+            root_subfolders.append(("Unfiled", "_unfiled/index.md", None))
+        self._add(
+            tar, f"{root}/index.md",
+            render_index("Index", subfolders=root_subfolders, documents=[]),
+        )
+
+        for folder in folders:
+            parts = [sanitize_component(p) for p in path_by_id[folder.folder_id]]
+            base = f"{root}/{'/'.join(parts)}"
+            heading = " / ".join(path_by_id[folder.folder_id])
+            subs = [
+                (c.name, f"{sanitize_component(c.name)}/index.md", c.description)
+                for c in sorted(children.get(folder.folder_id, []), key=lambda f: f.name)
+            ]
+            fdocs = docs_by_folder.get(folder.folder_id, [])
+            doc_entries = [(d.title, _concept_filename(d), d.summary) for d in fdocs]
+            self._add(
+                tar, f"{base}/index.md",
+                render_index(heading, subfolders=subs, documents=doc_entries),
+            )
+
+            events = await self._folder_events(folder.folder_id)
+            if events:
+                log_heading = f"Änderungsverlauf — {heading}"
+                self._add(tar, f"{base}/log.md", render_log(log_heading, events))
+
+            await self._write_documents(tar, base, fdocs)
+
+        if has_unfiled:
+            base = f"{root}/_unfiled"
+            unfiled = docs_by_folder[None]
+            entries = [(d.title, _concept_filename(d), d.summary) for d in unfiled]
+            self._add(
+                tar, f"{base}/index.md",
+                render_index("Unfiled", subfolders=[], documents=entries),
+            )
+            await self._write_documents(tar, base, unfiled)
+
+    async def _write_documents(
+        self, tar: tarfile.TarFile, base: str, docs: list[Document]
+    ) -> None:
+        for d in docs:
+            text = render_concept(
+                d, store_name=self._store_name, public_base_url=self._public_base_url
+            )
+            self._add(tar, f"{base}/{_concept_filename(d)}", text)
+            if self._with_originals:
+                try:
+                    data = await self._minio.get_object(d.document_id)
+                except Exception as exc:
+                    _log.warning("okf_original_missing", document_id=d.document_id, error=str(exc))
+                    continue
+                self._add(tar, f"{base}/{_original_filename(d)}", data)
+
+    async def _all_documents(self) -> list[Document]:
+        out: list[Document] = []
+        cursor: str | None = None
+        while True:
+            page, cursor = await self._db.scroll_documents(
+                page_size=self._page_size, after_id=cursor
+            )
+            out.extend(page)
+            if not cursor:
+                return out
+
+    async def _folder_events(self, folder_id: str) -> list[Event]:
+        out: list[Event] = []
+        offset = 0
+        while True:
+            page = await self._timeline.query(
+                EventQuery(
+                    folder_id=folder_id, include_subtree=False, limit=self._page_size, offset=offset
+                )
+            )
+            out.extend(page)
+            if len(page) < self._page_size:
+                return out
+            offset += self._page_size
+
+    @staticmethod
+    def _add(tar: tarfile.TarFile, path: str, content: str | bytes) -> None:
+        data = content.encode("utf-8") if isinstance(content, str) else content
+        info = tarfile.TarInfo(name=path)
+        info.size = len(data)
+        info.mtime = 0  # deterministic, git-diffable bundles
+        tar.addfile(info, io.BytesIO(data))
