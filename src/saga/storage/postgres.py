@@ -1088,6 +1088,37 @@ class PostgresStore:
             rows = (await session.execute(stmt)).scalars().all()
         return [_to_event(row) for row in rows]
 
+    async def replace_content_events(self, document_id: str, events: Sequence[Event]) -> None:
+        """Atomically replace a document's content events (delete + reinsert).
+
+        Audit events are untouched. Content events are a derivable projection of the
+        document, refreshed on each (re-)analysis.
+        """
+        async with self._sessions()() as session, session.begin():
+            await session.execute(
+                delete(EventRow).where(
+                    EventRow.document_id == document_id,
+                    EventRow.category == str(EventCategory.CONTENT),
+                )
+            )
+            for event in events:
+                session.add(
+                    EventRow(
+                        id=event.event_id or _new_id(),
+                        category=str(event.category),
+                        event_type=str(event.event_type),
+                        document_id=event.document_id,
+                        folder_id=event.folder_id,
+                        occurred_at=event.occurred_at,
+                        recorded_at=event.recorded_at,
+                        actor=event.actor,
+                        summary=event.summary,
+                        confidence=event.confidence,
+                        dedupe_key=event.dedupe_key,
+                        details=dict(event.details),
+                    )
+                )
+
     async def document_ids_in_folders(self, folder_ids: Sequence[str]) -> list[str]:
         """Return ids of documents that are members of any of *folder_ids* (no subtree)."""
         if not folder_ids:
