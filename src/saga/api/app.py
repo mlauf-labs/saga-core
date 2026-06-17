@@ -101,7 +101,11 @@ def create_app(config: AppConfig | None = None, services: Services | None = None
         await opensearch.bootstrap()
         await minio.bootstrap()
         events = EventRecorder(db, rationale_top_n=cfg.timeline.rationale_top_n)
-        timeline_service = TimelineService(db)
+        timeline_service = TimelineService(
+            db,
+            recurrence_horizon_days=cfg.timeline.recurrence_horizon_days,
+            max_occurrences_per_rule=cfg.timeline.max_occurrences_per_rule,
+        )
         app.state.services = Services(
             config=cfg,
             db=db,
