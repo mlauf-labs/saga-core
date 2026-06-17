@@ -8,6 +8,7 @@ log.md. FastAPI-independent; the REST route streams the builder's output as a .t
 from __future__ import annotations
 
 import io
+import json
 import tarfile
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
@@ -21,7 +22,7 @@ from saga.events import EventQuery
 from saga.scripts.layout import backup_basename, sanitize_component
 
 if TYPE_CHECKING:
-    from saga.core.models import Document, Event, Folder
+    from saga.core.models import DocType, Document, Event, Folder
 
 _log = get_logger("saga.export")
 
@@ -31,6 +32,7 @@ class DocumentSource(Protocol):
         self, *, page_size: int, after_id: str | None = ...
     ) -> tuple[list[Document], str | None]: ...
     async def list_folders(self) -> list[Folder]: ...
+    async def list_doc_types(self) -> list[DocType]: ...
     async def parents_map(self) -> dict[str, str | None]: ...
 
 
@@ -91,6 +93,50 @@ def _frontmatter(
         for n in document.notes
     ]
     return fm
+
+
+def render_manifest(store_name: str, folders: list[Folder], doc_types: list[DocType]) -> str:
+    """Render the machine-readable ``saga-manifest.json`` (folders + doc-types).
+
+    OKF consumers ignore non-markdown files; the SAGA import uses this for the exact
+    folder-tree restore (and the source-folder-id -> new-folder-id map) and to restore
+    doc-type descriptions/emoji that the concept frontmatter does not carry.
+    """
+    manifest = {
+        "version": "1",
+        "store": store_name,
+        "folders": [
+            {
+                "id": f.folder_id,
+                "name": f.name,
+                "parent_id": f.parent_id,
+                "description": f.description,
+                "emoji": f.emoji,
+                "metadata": f.metadata,
+            }
+            for f in folders
+        ],
+        "doc_types": [
+            {
+                "id": dt.doc_type_id,
+                "name": dt.name,
+                "description": dt.description,
+                "emoji": dt.emoji,
+            }
+            for dt in doc_types
+        ],
+    }
+    return json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
+
+
+def render_events_jsonl(events: list[Event]) -> str:
+    """Render ``saga-events.jsonl``: one ``Event.model_dump(mode="json")`` per line.
+
+    JSONL keeps large event volumes streamable. An empty list yields an empty string.
+    """
+    return "".join(
+        json.dumps(event.model_dump(mode="json"), ensure_ascii=False) + "\n" for event in events
+    )
 
 
 def render_concept(document: Document, *, store_name: str, public_base_url: str | None) -> str:
@@ -202,6 +248,7 @@ class OkfBundleBuilder:
     async def write_bundle(self, tar: tarfile.TarFile) -> None:
         documents = await self._all_documents()
         folders = await self._db.list_folders()
+        doc_types = await self._db.list_doc_types()
         parents = await self._db.parents_map()
         path_by_id = _folder_paths(folders, parents)
         root = f"okf-{self._store_name}-{datetime.now(UTC):%Y%m%d_%H%M%S}"
@@ -224,6 +271,19 @@ class OkfBundleBuilder:
             tar,
             f"{root}/index.md",
             render_index("Index", subfolders=root_subfolders, documents=[]),
+        )
+        # Machine-readable extras for a faithful SAGA round-trip. OKF consumers ignore
+        # non-markdown files; the SAGA import uses these for exact restore.
+        # See docs/superpowers/specs/2026-06-17-okf-faithful-round-trip-design.md.
+        self._add(
+            tar,
+            f"{root}/saga-manifest.json",
+            render_manifest(self._store_name, folders, doc_types),
+        )
+        self._add(
+            tar,
+            f"{root}/saga-events.jsonl",
+            render_events_jsonl(await self._all_events()),
         )
 
         for folder in folders:
@@ -294,6 +354,21 @@ class OkfBundleBuilder:
                     folder_id=folder_id, include_subtree=False, limit=self._page_size, offset=offset
                 )
             )
+            out.extend(page)
+            if len(page) < self._page_size:
+                return out
+            offset += self._page_size
+
+    async def _all_events(self) -> list[Event]:
+        """Page every event (audit + content, all folders) via the timeline read path.
+
+        ``EventQuery`` with ``folder_id=None`` applies no folder/document filter, so the
+        store returns all events; we page by offset until a short page.
+        """
+        out: list[Event] = []
+        offset = 0
+        while True:
+            page = await self._timeline.query(EventQuery(limit=self._page_size, offset=offset))
             out.extend(page)
             if len(page) < self._page_size:
                 return out

@@ -1,19 +1,29 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 import yaml
 
 from saga.core.models import (
+    DocType,
     Document,
     Event,
     EventCategory,
     EventType,
     ExtractedValue,
+    Folder,
     FolderRef,
     Note,
 )
-from saga.export.okf import render_concept, render_index, render_log, resource_uri
+from saga.export.okf import (
+    render_concept,
+    render_events_jsonl,
+    render_index,
+    render_log,
+    render_manifest,
+    resource_uri,
+)
 
 
 def _doc(**kw: object) -> Document:
@@ -129,3 +139,107 @@ def test_render_log_groups_by_date_newest_first_with_category_tags() -> None:
     assert text.index("## 2026-06-13") < text.index("## 2026-05-01")  # newest first
     assert "* **[audit] placement** — Placed in 1 folder." in text
     assert "* **[content] appointment** — Policy expiry." in text
+
+
+def test_render_manifest_maps_folders_and_doc_types() -> None:
+    now = datetime(2026, 5, 1, tzinfo=UTC)
+    folders = [
+        Folder(
+            folder_id="f-root",
+            name="Finanzen",
+            description="Money",
+            emoji="💰",
+            parent_id=None,
+            metadata={"color": "green"},
+            created_at=now,
+            updated_at=now,
+        ),
+        Folder(
+            folder_id="f-child",
+            name="2026",
+            description=None,
+            emoji=None,
+            parent_id="f-root",
+            metadata={},
+            created_at=now,
+            updated_at=now,
+        ),
+    ]
+    doc_types = [
+        DocType(
+            doc_type_id="dt1",
+            name="invoice",
+            description="A bill.",
+            emoji="📄",
+            created_at=now,
+            updated_at=now,
+        )
+    ]
+
+    rendered = render_manifest("saga", folders, doc_types)
+    assert rendered.endswith("\n")  # trailing newline is part of the contract
+    manifest = json.loads(rendered)
+
+    assert manifest["version"] == "1"
+    assert manifest["store"] == "saga"
+    assert manifest["folders"] == [
+        {
+            "id": "f-root",
+            "name": "Finanzen",
+            "parent_id": None,
+            "description": "Money",
+            "emoji": "💰",
+            "metadata": {"color": "green"},
+        },
+        {
+            "id": "f-child",
+            "name": "2026",
+            "parent_id": "f-root",
+            "description": None,
+            "emoji": None,
+            "metadata": {},
+        },
+    ]
+    assert manifest["doc_types"] == [
+        {"id": "dt1", "name": "invoice", "description": "A bill.", "emoji": "📄"}
+    ]
+
+
+def test_render_events_jsonl_one_object_per_line() -> None:
+    now = datetime(2026, 5, 1, tzinfo=UTC)
+    events = [
+        Event(
+            event_id="e1",
+            category=EventCategory.AUDIT,
+            event_type=EventType.FOLDER_CREATED,
+            folder_id="f-root",
+            recorded_at=now,
+            actor="system",
+            summary="Created folder Finanzen",
+        ),
+        Event(
+            event_id="e2",
+            category=EventCategory.CONTENT,
+            event_type=EventType.DATED_FACT,
+            document_id="d1",
+            occurred_at=now,
+            recorded_at=now,
+            actor="llm",
+            summary="Invoice dated 2026-05-01",
+            confidence=0.9,
+            details={"date": "2026-05-01"},
+        ),
+    ]
+
+    text = render_events_jsonl(events)
+
+    lines = text.splitlines()
+    assert len(lines) == 2
+    assert json.loads(lines[0]) == events[0].model_dump(mode="json")
+    assert json.loads(lines[1]) == events[1].model_dump(mode="json")
+    # Trailing newline so the file is POSIX-clean and append-friendly.
+    assert text.endswith("\n")
+
+
+def test_render_events_jsonl_empty() -> None:
+    assert render_events_jsonl([]) == ""

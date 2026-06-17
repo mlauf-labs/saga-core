@@ -159,3 +159,20 @@ async def test_export_okf_with_originals_param(
     assert resp.status_code == 200
     with tarfile.open(fileobj=io.BytesIO(resp.content), mode="r:gz") as tar:
         assert any(n.endswith(".pdf") for n in tar.getnames())
+
+
+async def test_export_okf_bundle_contains_machine_readable_files(
+    store: PostgresStore,
+    services: Services,
+) -> None:
+    await _seed(store)
+    app = create_app(services.config, services=services)
+    with TestClient(app) as client:
+        resp = client.get("/export/okf", headers=AUTH)
+
+    assert resp.status_code == 200
+    with tarfile.open(fileobj=io.BytesIO(resp.content), mode="r:gz") as tar:
+        names = tar.getnames()
+        root = names[0].split("/")[0]
+        assert f"{root}/saga-manifest.json" in names
+        assert f"{root}/saga-events.jsonl" in names
