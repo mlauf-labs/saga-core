@@ -448,7 +448,8 @@ async def extract_timeline(
     """Extract content/timeline events from the document text and persist them (Phase 2).
 
     Dateless events and events below *min_confidence* are dropped. On extractor failure the
-    prior content events are kept (no replace). Returns the number of events persisted.
+    prior content events are kept (no replace). A persistence error is logged and ingestion
+    continues (best-effort, FR-18). Returns the number of events persisted.
     """
     extraction = await analyzer.extract_timeline(content=markdown, trace_callbacks=trace_callbacks)
     if extraction is None:
@@ -483,7 +484,11 @@ async def extract_timeline(
                 details=details,
             )
         )
-    await db.replace_content_events(document_id, events)
+    try:
+        await db.replace_content_events(document_id, events)
+    except Exception as exc:
+        _log.warning("timeline_persist_failed", document_id=document_id, error=str(exc))
+        return 0
     _log.info("timeline_extracted", document_id=document_id, count=len(events))
     return len(events)
 

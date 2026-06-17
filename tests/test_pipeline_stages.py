@@ -574,3 +574,26 @@ async def test_extract_timeline_keeps_prior_events_on_failure(db: PostgresStore)
     assert count == 0
     events = await db.query_events(categories=[EventCategory.CONTENT], document_id="d9")
     assert len(events) == 1  # prior kept, not wiped
+
+
+async def test_extract_timeline_continues_on_persist_error() -> None:
+    class _FailingDB:
+        async def replace_content_events(self, document_id: str, events: object) -> None:
+            raise RuntimeError("db down")
+
+    analyzer = _FakeAnalyzer(
+        timeline=TimelineExtraction(
+            events=[
+                TimelineEventOut(kind="future", description="x", date="2027-01-01", confidence=0.9)
+            ]
+        )
+    )
+    # A persistence failure in this best-effort stage must not raise (ingestion continues).
+    count = await extract_timeline(
+        document_id="dX",
+        markdown="t",
+        db=_FailingDB(),  # type: ignore[arg-type]
+        analyzer=analyzer,  # type: ignore[arg-type]
+        min_confidence=0.5,
+    )
+    assert count == 0
