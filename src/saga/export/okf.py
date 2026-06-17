@@ -244,7 +244,7 @@ class OkfBundleBuilder:
 
             events = await self._folder_events(folder.folder_id)
             if events:
-                log_heading = f"Änderungsverlauf — {heading}"
+                log_heading = f"Change log — {heading}"
                 self._add(tar, f"{base}/log.md", render_log(log_heading, events))
 
             await self._write_documents(tar, base, fdocs)

@@ -124,8 +124,8 @@ def test_render_log_groups_by_date_newest_first_with_category_tags() -> None:
             summary="Policy expiry.",
         ),
     ]
-    text = render_log("Änderungsverlauf — Finanzen", events)
-    assert text.startswith("# Änderungsverlauf — Finanzen")
+    text = render_log("Change log — Finanzen", events)
+    assert text.startswith("# Change log — Finanzen")
     assert text.index("## 2026-06-13") < text.index("## 2026-05-01")  # newest first
     assert "* **[audit] placement** — Placed in 1 folder." in text
     assert "* **[content] appointment** — Policy expiry." in text
