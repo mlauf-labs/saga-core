@@ -126,3 +126,41 @@ async def test_get_agenda_returns_items(config: AppConfig) -> None:
 
     result = _structured(await mcp.call_tool("get_agenda", {}))
     assert "items" in result and "limit" in result and "offset" in result
+
+
+async def test_get_agenda_forwards_agenda_query(config: AppConfig) -> None:
+    """The tool hard-wires the agenda semantics into the EventQuery it issues."""
+    fake = _FakeTimelineService([])
+    services = _services_with_timeline(config, fake)
+    mcp = build_server(config, services)
+
+    await mcp.call_tool("get_agenda", {"folder_id": "f1"})
+
+    q = fake.last_query
+    assert q is not None
+    assert q.expand_recurrences is True
+    assert q.descending is False
+    assert q.order_by == "occurred_at"
+    assert q.include_subtree is True
+    assert q.categories == (EventCategory.CONTENT,)
+    assert q.folder_id == "f1"
+
+
+async def test_get_agenda_returns_empty_when_timeline_is_none(config: AppConfig) -> None:
+    services = _services_with_timeline(config, _FakeTimelineService([]))
+    object.__setattr__(services, "timeline", None)
+    mcp = build_server(config, services)
+
+    result = _structured(await mcp.call_tool("get_agenda", {}))
+    assert result["items"] == []
+
+
+async def test_get_agenda_clamps_limit_to_max_page_size(config: AppConfig) -> None:
+    fake = _FakeTimelineService([])
+    services = _services_with_timeline(config, fake)
+    mcp = build_server(config, services)
+
+    await mcp.call_tool("get_agenda", {"limit": 99999})
+
+    assert fake.last_query is not None
+    assert fake.last_query.limit == config.timeline.max_page_size
