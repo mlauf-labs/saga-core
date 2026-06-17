@@ -1,6 +1,6 @@
 """Folder-creation tools for the agentic folder-placement pipeline (FR-16/17).
 
-These tools are passed to ``extract_with_tools`` so the LLM can build the required
+These tools are passed to ``extract_data_with_tools`` so the LLM can build the required
 folder hierarchy incrementally — one ``create_folder`` call per level — before
 submitting its final ``FolderDecision``.  Separating creation from assignment means
 the document ends up only in the deepest/most specific folder(s), not in every
@@ -9,7 +9,7 @@ ancestor that was created along the way.
 Usage::
 
     tools = build_folder_tools(db)
-    result, stats = await extract_with_tools(
+    result, stats = await extract_data_with_tools(
         model,
         FolderDecision,
         document_summary,
@@ -99,7 +99,7 @@ class CreateFolderArgs(BaseModel):
 
 
 def build_folder_tools(db: PostgresStore) -> list[Tool]:
-    """Return the list of tools to pass to ``extract_with_tools`` for folder placement.
+    """Return the list of tools to pass to ``extract_data_with_tools`` for folder placement.
 
     The returned tools are bound to *db* via closure, so the LLM agent can create
     folders directly in Postgres during the loop.

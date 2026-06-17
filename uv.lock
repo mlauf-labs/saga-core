@@ -2829,7 +2829,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "redis", specifier = ">=5.1" },
     { name = "rich", specifier = ">=13.9" },
-    { name = "saidex", specifier = ">=0.2.0,<0.3" },
+    { name = "saidex", specifier = ">=0.3,<0.4" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
     { name = "structlog", specifier = ">=24.4" },
     { name = "tenacity", specifier = ">=9.0" },
@@ -2854,16 +2854,16 @@ dev = [
 
 [[package]]
 name = "saidex"
-version = "0.2.0"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "json-repair" },
     { name = "langchain-core" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/38/92/5be27a594ea388cdcef789dce2079d3daf6baf8ef05f6318ca7e3d553007/saidex-0.2.0.tar.gz", hash = "sha256:7b881fb8ed40a7b7a493348c1d16ac19958400ec2e5155e7258b2be63a18e8c7", size = 293748, upload-time = "2026-06-13T15:22:33.929Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6c/7e/6f72f9524b06f6726a6da377bc0c48b26a443eab3e0f42a5e69a7f92b20d/saidex-0.3.0.tar.gz", hash = "sha256:9cbf29bb5c0eb1fedc8f23c413fb5b87d16f6a3f70923196d112d0615504341a", size = 364173, upload-time = "2026-06-15T12:22:03.794Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0e/8e/e50917b816def6e47acf219fb62d9cd3c29818957e028548001a25fe9ec6/saidex-0.2.0-py3-none-any.whl", hash = "sha256:c294e6c5b8ca0acfc8b89acc891faf4f9b9590e95ee06db68c53fdb68f97c26f", size = 24673, upload-time = "2026-06-13T15:22:32.647Z" },
+    { url = "https://files.pythonhosted.org/packages/70/e1/3c8fa95ed5c4b153d7b0e72b75a5fa87d0e20e1d488b311fbe0e5b534bad/saidex-0.3.0-py3-none-any.whl", hash = "sha256:91d8dbc1d96795ab16d8c69cb286fec71d4e5e92c50cb7417c3f7981137d74b9", size = 44406, upload-time = "2026-06-15T12:22:02.535Z" },
 ]
 
 [[package]]
