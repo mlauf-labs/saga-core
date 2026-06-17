@@ -511,8 +511,13 @@ async def test_index_chunks_missing_document_raises(db: PostgresStore) -> None:
 def _make_content_event(document_id: str) -> Event:
     now = datetime(2026, 5, 1, tzinfo=UTC)
     return Event(
-        event_id="", category=EventCategory.CONTENT, event_type=EventType.DATED_FACT,
-        document_id=document_id, occurred_at=now, recorded_at=now, actor="extraction",
+        event_id="",
+        category=EventCategory.CONTENT,
+        event_type=EventType.DATED_FACT,
+        document_id=document_id,
+        occurred_at=now,
+        recorded_at=now,
+        actor="extraction",
         summary="prior",
     )
 
@@ -521,20 +526,29 @@ async def test_extract_timeline_persists_filtered_content_events(db: PostgresSto
     analyzer = _FakeAnalyzer(
         timeline=TimelineExtraction(
             events=[
-                TimelineEventOut(kind="future", description="Policy expiry",
-                                 date="2027-04-30", confidence=0.9),
+                TimelineEventOut(
+                    kind="future", description="Policy expiry", date="2027-04-30", confidence=0.9
+                ),
                 TimelineEventOut(kind="past", description="No date", date="", confidence=0.9),
-                TimelineEventOut(kind="past", description="Low conf", date="2026-01-01",
-                                 confidence=0.1),
-                TimelineEventOut(kind="recurring", description="Annual renewal",
-                                 date="2026-05-01", end_date="2030-05-01",
-                                 recurrence="FREQ=YEARLY", confidence=0.8),
+                TimelineEventOut(
+                    kind="past", description="Low conf", date="2026-01-01", confidence=0.1
+                ),
+                TimelineEventOut(
+                    kind="recurring",
+                    description="Annual renewal",
+                    date="2026-05-01",
+                    end_date="2030-05-01",
+                    recurrence="FREQ=YEARLY",
+                    confidence=0.8,
+                ),
             ]
         )
     )
     count = await extract_timeline(
-        document_id="d1", markdown="text",
-        db=db, analyzer=analyzer,  # type: ignore[arg-type]
+        document_id="d1",
+        markdown="text",
+        db=db,
+        analyzer=analyzer,  # type: ignore[arg-type]
         min_confidence=0.5,
     )
     assert count == 2  # dateless + low-confidence dropped
@@ -551,8 +565,10 @@ async def test_extract_timeline_keeps_prior_events_on_failure(db: PostgresStore)
     await db.replace_content_events("d9", [_make_content_event("d9")])
     analyzer = _FakeAnalyzer(timeline=None)
     count = await extract_timeline(
-        document_id="d9", markdown="x",
-        db=db, analyzer=analyzer,  # type: ignore[arg-type]
+        document_id="d9",
+        markdown="x",
+        db=db,
+        analyzer=analyzer,  # type: ignore[arg-type]
         min_confidence=0.5,
     )
     assert count == 0

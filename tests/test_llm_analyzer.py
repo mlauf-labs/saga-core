@@ -310,10 +310,18 @@ async def test_extract_uses_global_fallback_for_non_overridden_steps(
 async def test_extract_timeline_returns_extraction(monkeypatch: pytest.MonkeyPatch) -> None:
     recorder = _patch(
         monkeypatch,
-        {"TimelineExtraction": TimelineExtraction(
-            events=[TimelineEventOut(kind="future", description="Policy expiry",
-                                     date="2027-04-30", confidence=0.9)]
-        )},
+        {
+            "TimelineExtraction": TimelineExtraction(
+                events=[
+                    TimelineEventOut(
+                        kind="future",
+                        description="Policy expiry",
+                        date="2027-04-30",
+                        confidence=0.9,
+                    )
+                ]
+            )
+        },
     )
     result = await _analyzer().extract_timeline(content="...expires 2027-04-30...")
     assert result is not None

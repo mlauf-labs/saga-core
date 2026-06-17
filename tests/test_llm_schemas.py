@@ -142,8 +142,12 @@ def test_extracted_value_to_model() -> None:
 def test_timeline_extraction_parses_and_defaults() -> None:
     raw = {
         "events": [
-            {"kind": "future", "description": "Policy expiry", "date": "2027-04-30",
-             "confidence": 0.9}
+            {
+                "kind": "future",
+                "description": "Policy expiry",
+                "date": "2027-04-30",
+                "confidence": 0.9,
+            }
         ]
     }
     ex = TimelineExtraction.model_validate(raw)

@@ -106,13 +106,25 @@ async def test_replace_content_events_replaces_only_content(store: PostgresStore
     )
     await store.replace_content_events(
         "d1",
-        [_event(category=EventCategory.CONTENT, event_type=EventType.DATED_FACT,
-                document_id="d1", summary="old")],
+        [
+            _event(
+                category=EventCategory.CONTENT,
+                event_type=EventType.DATED_FACT,
+                document_id="d1",
+                summary="old",
+            )
+        ],
     )
     await store.replace_content_events(
         "d1",
-        [_event(category=EventCategory.CONTENT, event_type=EventType.APPOINTMENT,
-                document_id="d1", summary="new")],
+        [
+            _event(
+                category=EventCategory.CONTENT,
+                event_type=EventType.APPOINTMENT,
+                document_id="d1",
+                summary="new",
+            )
+        ],
     )
     content = await store.query_events(categories=[EventCategory.CONTENT], document_id="d1")
     assert [e.summary for e in content] == ["new"]  # prior content replaced
