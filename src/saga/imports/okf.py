@@ -8,19 +8,22 @@ FastAPI-independent; the REST route extracts the uploaded ``.tar.gz`` and calls 
 
 from __future__ import annotations
 
+import hashlib
 import json
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
 from pydantic import BaseModel, Field
 
 from saga.core.logging import get_logger
-from saga.core.models import Event
+from saga.core.models import Document, DocumentStatus, Event, ExtractedValue
 from saga.export.okf import render_notes_suffix
+from saga.pipeline.queue import INDEX_JOB
+from saga.scripts.layout import backup_basename
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from saga.core.config import AppConfig
 
 _log = get_logger("saga.import")
@@ -60,6 +63,15 @@ def strip_notes_suffix(body_section: str, note_contents: list[str]) -> str:
     if section.startswith("\n") and section.endswith("\n"):
         return section[1:-1]
     return section
+
+
+def _parse_dt(value: Any) -> datetime | None:  # noqa: ANN401
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
 
 
 class ImportSummary(BaseModel):
@@ -196,3 +208,83 @@ class OkfBundleImporter:
         )
         by_key[key] = folder.folder_id
         return 1, 0, folder.folder_id
+
+    # --- documents ---------------------------------------------------------- #
+
+    async def _restore_document(
+        self,
+        concept_path: Path,
+        *,
+        doctype_ids: dict[str, str],
+        folder_map: dict[str, str],
+    ) -> str:
+        """Restore one concept file into the store. Returns "imported" or "skipped"."""
+        text = concept_path.read_text(encoding="utf-8")  # noqa: ASYNC240
+        fm, body_section = split_frontmatter(text)
+        saga_id = fm.get("saga_id")
+        if not saga_id:
+            raise ValueError(f"Concept '{concept_path.name}' has no saga_id.")
+
+        existing = await self._db.get_document(saga_id)
+        if existing is not None:
+            # On a saga_id collision, 'replace' overwrites in place; 'reject' and 'allow'
+            # both skip (a preserved primary key cannot be duplicated). See spec section 7.
+            if self._config.dedup.on_duplicate == "replace":
+                await self._db.delete_document(saga_id)
+            else:
+                return "skipped"
+
+        note_contents = [n["content"] for n in fm.get("saga_notes", [])]
+        content_markdown = strip_notes_suffix(body_section, note_contents) or None
+        mime_type = fm.get("saga_mime_type") or "application/octet-stream"
+
+        data = self._read_original(concept_path, fm, saga_id)
+        if data is not None:
+            minio_object = await self._minio.put_object(saga_id, data, mime_type)
+        else:
+            data = (content_markdown or "").encode("utf-8")
+            minio_object = await self._minio.put_object(saga_id, data, "text/markdown")
+
+        now = datetime.now(UTC)
+        type_name = fm.get("type", "")
+        document = Document(
+            document_id=saga_id,
+            title=fm.get("title") or saga_id,
+            filename=fm.get("saga_filename") or "",
+            mime_type=mime_type,
+            size_bytes=int(fm.get("saga_size_bytes") or len(data)),
+            content_hash=fm.get("saga_content_hash") or hashlib.sha256(data).hexdigest(),
+            minio_object=minio_object,
+            status=DocumentStatus(str(fm.get("saga_status", "ready"))),
+            content_markdown=content_markdown,
+            doc_type_id=doctype_ids.get(type_name),
+            summary=fm.get("description"),
+            extracted_values=[ExtractedValue(**v) for v in fm.get("saga_extracted_values", [])],
+            created_at=_parse_dt(fm.get("saga_created_at")) or now,
+            updated_at=_parse_dt(fm.get("timestamp")) or now,
+        )
+        await self._db.create_document(document)
+
+        for content in note_contents:
+            await self._db.add_document_note(saga_id, content)
+
+        refs = fm.get("saga_folders", [])
+        folder_ids = [folder_map[r["id"]] for r in refs if r.get("id") in folder_map]
+        primary = next(
+            (folder_map[r["id"]] for r in refs if r.get("primary") and r.get("id") in folder_map),
+            None,
+        )
+        if folder_ids:
+            await self._db.set_document_folders(saga_id, folder_ids=folder_ids, primary_id=primary)
+
+        await self._queue.enqueue_job(INDEX_JOB, saga_id)
+        return "imported"
+
+    def _read_original(self, concept_path: Path, fm: dict[str, Any], saga_id: str) -> bytes | None:
+        """Return the original binary next to the concept, or None to use the markdown body."""
+        suffix = Path(fm.get("saga_filename") or "").suffix
+        if not suffix:
+            return None
+        base = backup_basename(saga_id, fm.get("title") or saga_id)
+        original = concept_path.with_name(f"{base}{suffix}")
+        return original.read_bytes() if original.exists() else None

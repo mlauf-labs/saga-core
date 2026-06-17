@@ -8,8 +8,19 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from saga.core.config import AppConfig
-from saga.core.models import Event, EventCategory, EventType
+from saga.core.models import (
+    Document,
+    DocumentStatus,
+    Event,
+    EventCategory,
+    EventType,
+    ExtractedValue,
+    FolderRef,
+    Note,
+)
+from saga.export.okf import render_concept
 from saga.imports.okf import OkfBundleImporter
+from saga.pipeline.queue import INDEX_JOB
 from saga.storage.postgres import PostgresStore
 from tests.conftest import FakeQueue, InMemoryBinaryStore
 
@@ -98,3 +109,98 @@ async def test_load_manifest_and_events(tmp_path: Path, store: PostgresStore) ->
     loaded = importer._load_events(tmp_path)
     assert [e.event_id for e in loaded] == ["e1"]
     assert importer._load_manifest(tmp_path / "nonexistent-empty") is None
+
+
+def _concept_text(folder_src_id: str) -> str:
+    now = datetime(2026, 5, 1, tzinfo=UTC)
+    doc = Document(
+        document_id="doc-1",
+        title="Rechnung ACME",
+        filename="rechnung.pdf",
+        mime_type="application/pdf",
+        size_bytes=8,
+        content_hash="abc123",
+        minio_object="saga-originals/doc-1",
+        status=DocumentStatus.READY,
+        doc_type="invoice",
+        summary="One invoice.",
+        content_markdown="# Body\n\nLine two.",
+        extracted_values=[ExtractedValue(key="total", type="money", value="9.99")],
+        folders=[FolderRef(folder_id=folder_src_id, name="Finanzen", is_primary=True)],
+        notes=[Note(note_id="n1", content="Check me", created_at=now, updated_at=now)],
+        created_at=now,
+        updated_at=now,
+    )
+    return render_concept(doc, store_name="saga", public_base_url=None)
+
+
+async def test_restore_document_faithful(tmp_path: Path, store: PostgresStore) -> None:
+    queue = FakeQueue()
+    importer = OkfBundleImporter(
+        db=store, minio=InMemoryBinaryStore(), queue=queue, config=AppConfig()
+    )
+    doctype_ids, _, _ = await importer._restore_doc_types(
+        [{"id": "dt-src", "name": "invoice", "description": "A bill.", "emoji": "📄"}]
+    )
+    folder_map, _, _ = await importer._restore_folders(
+        [
+            {
+                "id": "f-src",
+                "name": "Finanzen",
+                "parent_id": None,
+                "description": "Money",
+                "emoji": "💰",
+                "metadata": {},
+            }
+        ]
+    )
+    concept = tmp_path / "Rechnung-ACME__doc-1.md"
+    concept.write_text(_concept_text("f-src"), encoding="utf-8")
+
+    result = await importer._restore_document(
+        concept, doctype_ids=doctype_ids, folder_map=folder_map
+    )
+
+    assert result == "imported"
+    restored = await store.get_document("doc-1")
+    assert restored is not None
+    assert restored.title == "Rechnung ACME"
+    assert restored.content_markdown == "# Body\n\nLine two."
+    assert restored.summary == "One invoice."
+    assert restored.doc_type == "invoice"
+    assert restored.status == DocumentStatus.READY
+    assert restored.mime_type == "application/pdf"
+    assert restored.content_hash == "abc123"
+    assert [v.key for v in restored.extracted_values] == ["total"]
+    assert [n.content for n in restored.notes] == ["Check me"]  # get_document loads notes
+    refs = await store.get_document_folders("doc-1")
+    assert [r.folder_id for r in refs] == [folder_map["f-src"]]
+    assert refs[0].is_primary is True
+    assert (INDEX_JOB, ("doc-1",)) in queue.jobs
+
+
+async def test_restore_document_skips_existing_saga_id(
+    tmp_path: Path, store: PostgresStore
+) -> None:  # noqa: E501
+    importer = OkfBundleImporter(
+        db=store, minio=InMemoryBinaryStore(), queue=FakeQueue(), config=AppConfig()
+    )
+    importer._config.dedup.on_duplicate = "reject"
+    folder_map, _, _ = await importer._restore_folders(
+        [
+            {
+                "id": "f-src",
+                "name": "Finanzen",
+                "parent_id": None,
+                "description": None,
+                "emoji": None,
+                "metadata": {},
+            }
+        ]
+    )
+    concept = tmp_path / "Rechnung-ACME__doc-1.md"
+    concept.write_text(_concept_text("f-src"), encoding="utf-8")
+    await importer._restore_document(concept, doctype_ids={}, folder_map=folder_map)
+
+    result = await importer._restore_document(concept, doctype_ids={}, folder_map=folder_map)
+    assert result == "skipped"
