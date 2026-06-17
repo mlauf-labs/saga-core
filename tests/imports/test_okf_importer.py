@@ -18,6 +18,7 @@ from saga.core.models import (
     FolderRef,
     Note,
 )
+from saga.events import EventQuery, TimelineService
 from saga.export.okf import render_concept
 from saga.imports.okf import OkfBundleImporter
 from saga.pipeline.queue import INDEX_JOB
@@ -229,9 +230,7 @@ async def test_restore_document_restores_sidecar_binary(
     tmp_path: Path, store: PostgresStore
 ) -> None:
     minio = InMemoryBinaryStore()
-    importer = OkfBundleImporter(
-        db=store, minio=minio, queue=FakeQueue(), config=AppConfig()
-    )
+    importer = OkfBundleImporter(db=store, minio=minio, queue=FakeQueue(), config=AppConfig())
     concept = tmp_path / "Rechnung-ACME__doc-1.md"
     concept.write_text(_concept_text("f-src"), encoding="utf-8")
     # A with-originals export places the binary next to the concept (same basename).
@@ -242,3 +241,40 @@ async def test_restore_document_restores_sidecar_binary(
 
     # The exact original binary (not the markdown body) is stored under the document id.
     assert minio.objects["doc-1"] == b"%PDF-1.7 real bytes"
+
+
+async def test_restore_events_remaps_folder_id(store: PostgresStore) -> None:
+    importer = _importer(store)
+    now = datetime(2026, 5, 1, tzinfo=UTC)
+    created = await store.create_folder(name="Finanzen")
+    folder_map = {"f-src": created.folder_id}
+    events = [
+        Event(
+            event_id="e-audit",
+            category=EventCategory.AUDIT,
+            event_type=EventType.FOLDER_CREATED,
+            folder_id="f-src",
+            recorded_at=now,
+            actor="system",
+            summary="created",
+        ),
+        Event(
+            event_id="e-content",
+            category=EventCategory.CONTENT,
+            event_type=EventType.DATED_FACT,
+            document_id="d1",
+            occurred_at=now,
+            recorded_at=now,
+            actor="llm",
+            summary="dated",
+        ),
+    ]
+
+    restored, skipped = await importer._restore_events(events, folder_map)
+
+    assert (restored, skipped) == (2, 0)
+    stored = {e.event_id: e for e in await TimelineService(store).query(EventQuery(limit=100))}
+    assert stored["e-audit"].folder_id == created.folder_id
+    assert stored["e-content"].folder_id is None
+    # Idempotent re-restore inserts nothing.
+    assert await importer._restore_events(events, folder_map) == (0, 2)

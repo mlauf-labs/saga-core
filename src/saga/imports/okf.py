@@ -280,6 +280,31 @@ class OkfBundleImporter:
         await self._queue.enqueue_job(INDEX_JOB, saga_id)
         return "imported"
 
+    # --- events ------------------------------------------------------------- #
+
+    async def _restore_events(
+        self, events: list[Event], folder_map: dict[str, str]
+    ) -> tuple[int, int]:
+        """Restore events verbatim, remapping ``folder_id`` via the folder id map.
+
+        ``None`` folder_ids (content/document-scoped events) stay ``None``. Returns
+        (restored, skipped); skipped counts events whose ``event_id`` already exists.
+        """
+        remapped = [
+            event.model_copy(
+                update={
+                    "folder_id": folder_map.get(event.folder_id)
+                    if event.folder_id is not None
+                    else None
+                }
+            )
+            for event in events
+        ]
+        restored = await self._db.restore_events(remapped)
+        return restored, len(remapped) - restored
+
+    # --- documents ---------------------------------------------------------- #
+
     def _read_original(self, concept_path: Path, fm: dict[str, Any], saga_id: str) -> bytes | None:
         """Return the original binary next to the concept, or None to use the markdown body."""
         suffix = Path(fm.get("saga_filename") or "").suffix
