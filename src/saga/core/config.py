@@ -183,6 +183,14 @@ class TimelineConfig(BaseModel):
     max_page_size: int = 500
 
 
+class ExportConfig(BaseModel):
+    """Tunables for the OKF export."""
+
+    # Public base URL used to build resolvable OKF `resource` links
+    # (e.g. https://saga.example.com). When unset, a saga:// URI is used.
+    public_base_url: str | None = None
+
+
 class RedisConfig(BaseModel):
     url: str = "redis://redis:6379/0"
 
@@ -265,6 +273,7 @@ class AppConfig(BaseModel):
     dedup: DedupConfig = Field(default_factory=DedupConfig)
     similarity: SimilarityConfig = Field(default_factory=SimilarityConfig)
     timeline: TimelineConfig = Field(default_factory=TimelineConfig)
+    export: ExportConfig = Field(default_factory=ExportConfig)
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
     langfuse: LangfuseConfig = Field(default_factory=LangfuseConfig)
 
@@ -338,6 +347,7 @@ def load_config(config_dir: Path | str = "config") -> AppConfig:
         "dedup",
         "similarity",
         "timeline",
+        "export",
         "generation",
         "langfuse",
     ):
