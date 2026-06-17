@@ -52,6 +52,7 @@ saga-worker = "saga.pipeline.__main__:main"
 saga-mcp = "saga.mcp.__main__:main"
 saga-backup = "saga.scripts.backup:main"
 saga-export-okf = "saga.scripts.export_okf:main"
+saga-import-okf = "saga.scripts.import_okf:main"
 
 [dependency-groups]
 dev = [
@@ -90,6 +91,8 @@ select = ["E", "F", "I", "UP", "B", "C4", "SIM", "TC", "RUF", "ANN", "ASYNC"]
 "src/saga/scripts/backup.py" = ["ASYNC240"]
 # The export-okf client writes a single blob; blocking filesystem IO is intentional.
 "src/saga/scripts/export_okf.py" = ["ASYNC240"]
+# The import-okf client reads a single blob; blocking filesystem IO is intentional.
+"src/saga/scripts/import_okf.py" = ["ASYNC240"]
 
 [tool.ruff.lint.flake8-type-checking]
 # Pydantic evaluates annotations at runtime, so don't push their imports into

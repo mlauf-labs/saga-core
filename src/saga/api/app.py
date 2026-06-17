@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from saga import __version__
 from saga.api.dependencies import Services
 from saga.api.errors import register_exception_handlers
-from saga.api.routes import doctypes, documents, export, folders, llm, search, timeline
+from saga.api.routes import doctypes, documents, export, folders, imports, llm, search, timeline
 from saga.core.config import AppConfig, load_config
 from saga.core.logging import configure_logging, get_logger
 from saga.embeddings import build_embedding_provider, load_embeddings_config
@@ -176,6 +176,7 @@ def create_app(config: AppConfig | None = None, services: Services | None = None
     app.include_router(doctypes.router)
     app.include_router(search.router)
     app.include_router(export.router)
+    app.include_router(imports.router)
     app.include_router(llm.router)
     app.include_router(timeline.router)
 
