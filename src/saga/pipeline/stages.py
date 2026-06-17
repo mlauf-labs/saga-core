@@ -8,11 +8,12 @@ similarity -> place in folder(s) -> project + index chunks.
 
 from __future__ import annotations
 
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Any
 
 from saga.core.errors import NotFoundError
 from saga.core.logging import get_logger
-from saga.core.models import Chunk, ExtractedValue
+from saga.core.models import Chunk, Event, EventCategory, EventType, ExtractedValue
 from saga.search.similarity import score_candidates, vote_folders
 from saga.storage.mappings import build_value_terms
 from saga.storage.postgres import ancestor_ids
@@ -414,6 +415,77 @@ def _folder_paths(folders: list[Folder], parents: dict[str, str | None]) -> dict
             current = parents.get(current)
         paths[fid] = "/".join(reversed(chain))
     return paths
+
+
+_KIND_TO_EVENT_TYPE: dict[str, EventType] = {
+    "past": EventType.DATED_FACT,
+    "future": EventType.APPOINTMENT,
+    "recurring": EventType.RECURRING,
+}
+
+
+def _parse_iso_date(value: str) -> datetime | None:
+    """Parse an ISO ``YYYY-MM-DD`` (date-only) into a midnight-UTC datetime, or None."""
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        parsed = date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+    return datetime(parsed.year, parsed.month, parsed.day, tzinfo=UTC)
+
+
+async def extract_timeline(
+    *,
+    document_id: str,
+    markdown: str,
+    db: PostgresStore,
+    analyzer: DocumentAnalyzer,
+    min_confidence: float,
+    trace_callbacks: list[Any] | None = None,
+) -> int:
+    """Extract content/timeline events from the document text and persist them (Phase 2).
+
+    Dateless events and events below *min_confidence* are dropped. On extractor failure the
+    prior content events are kept (no replace). Returns the number of events persisted.
+    """
+    extraction = await analyzer.extract_timeline(content=markdown, trace_callbacks=trace_callbacks)
+    if extraction is None:
+        _log.warning("timeline_extraction_failed", document_id=document_id)
+        return 0
+    now = datetime.now(UTC)
+    events: list[Event] = []
+    for item in extraction.events:
+        occurred = _parse_iso_date(item.date)
+        if occurred is None or item.confidence < min_confidence:
+            continue
+        event_type = _KIND_TO_EVENT_TYPE.get(item.kind, EventType.DATED_FACT)
+        details: dict[str, Any] = {"source_quote": item.source_quote}
+        end = _parse_iso_date(item.end_date) if item.end_date else None
+        if end is not None:
+            details["end_date"] = end.date().isoformat()
+        if event_type == EventType.RECURRING and item.recurrence:
+            details["recurrence"] = item.recurrence
+        events.append(
+            Event(
+                event_id="",
+                category=EventCategory.CONTENT,
+                event_type=event_type,
+                document_id=document_id,
+                folder_id=None,
+                occurred_at=occurred,
+                recorded_at=now,
+                actor="extraction",
+                summary=item.description,
+                confidence=item.confidence,
+                dedupe_key=None,
+                details=details,
+            )
+        )
+    await db.replace_content_events(document_id, events)
+    _log.info("timeline_extracted", document_id=document_id, count=len(events))
+    return len(events)
 
 
 async def index_chunks(
