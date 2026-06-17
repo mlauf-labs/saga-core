@@ -15,6 +15,9 @@ if TYPE_CHECKING:
 #: Name of the ingestion job (must match the worker function name).
 INGEST_JOB = "ingest_document"
 
+#: Name of the non-LLM reindex job (must match the worker function name).
+INDEX_JOB = "index_document"
+
 
 def redis_settings(config: RedisConfig) -> RedisSettings:
     """Build ARQ ``RedisSettings`` from the configured Redis DSN."""

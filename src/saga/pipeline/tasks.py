@@ -248,3 +248,37 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
         raise
     finally:
         tracer.finish()
+
+
+async def index_document(ctx: dict[str, Any], document_id: str) -> None:
+    """Re-index a document without re-running the LLM stages (used by the OKF import).
+
+    Embeds the already-stored summary and runs ``index_chunks`` (OpenSearch document
+    projection + chunk vectors). Unlike ``ingest_document`` it does not convert, classify,
+    extract, summarise, or place — so restored metadata and content/timeline events are
+    preserved exactly.
+    """
+    bind_correlation_id(document_id)
+    db: PostgresStore = ctx["db"]
+    opensearch: OpenSearchStore = ctx["opensearch"]
+    embedder: EmbeddingProvider = ctx["embedder"]
+    chunker: MarkdownChunker = ctx["chunker"]
+
+    document = await db.get_document(document_id)
+    if document is None:
+        raise NotFoundError(f"Document '{document_id}' was not found before indexing.")
+
+    summary_vector: list[float] = []
+    if document.summary:
+        vectors = await embedder.embed([document.summary])
+        summary_vector = vectors[0] if vectors else []
+
+    await index_chunks(
+        document_id=document_id,
+        summary_vector=summary_vector,
+        db=db,
+        opensearch=opensearch,
+        chunker=chunker,
+        embedder=embedder,
+    )
+    _log.info("index_complete", document_id=document_id)

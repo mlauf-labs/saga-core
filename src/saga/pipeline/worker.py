@@ -31,7 +31,7 @@ from saga.ollama import (
     resolve_check_urls,
 )
 from saga.pipeline.queue import redis_settings
-from saga.pipeline.tasks import ingest_document
+from saga.pipeline.tasks import index_document, ingest_document
 from saga.storage import MinioStore, OpenSearchStore, PostgresStore
 
 if TYPE_CHECKING:
@@ -131,7 +131,7 @@ class WorkerSettings:
     configuration is not loaded at import time.
     """
 
-    functions: ClassVar[list[Any]] = [ingest_document]
+    functions: ClassVar[list[Any]] = [ingest_document, index_document]
     on_startup = on_startup
     on_shutdown = on_shutdown
     redis_settings: ClassVar[RedisSettings | None] = None
