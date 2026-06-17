@@ -100,6 +100,10 @@ timeline:
   # Minimum confidence for an extracted content/timeline event to be kept.
   content_min_confidence: 0.5
 
+export:
+  # Public base URL for resolvable OKF `resource` links; null → saga:// fallback.
+  public_base_url: null
+
 generation:
   # Natural language used for LLM-generated content: summaries, folder names/descriptions,
   # doc-type descriptions, and folder-placement rationale.  Use a full name understood by
