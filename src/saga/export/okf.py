@@ -128,6 +128,16 @@ def render_manifest(store_name: str, folders: list[Folder], doc_types: list[DocT
     return json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
 
 
+def render_events_jsonl(events: list[Event]) -> str:
+    """Render ``saga-events.jsonl``: one ``Event.model_dump(mode="json")`` per line.
+
+    JSONL keeps large event volumes streamable. An empty list yields an empty string.
+    """
+    return "".join(
+        json.dumps(event.model_dump(mode="json"), ensure_ascii=False) + "\n" for event in events
+    )
+
+
 def render_concept(document: Document, *, store_name: str, public_base_url: str | None) -> str:
     """Render a concept file: YAML frontmatter, the markdown body, and an optional Notes section."""
     block = yaml.safe_dump(

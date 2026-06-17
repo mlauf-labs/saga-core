@@ -16,7 +16,14 @@ from saga.core.models import (
     FolderRef,
     Note,
 )
-from saga.export.okf import render_concept, render_index, render_log, render_manifest, resource_uri
+from saga.export.okf import (
+    render_concept,
+    render_events_jsonl,
+    render_index,
+    render_log,
+    render_manifest,
+    resource_uri,
+)
 
 
 def _doc(**kw: object) -> Document:
@@ -196,3 +203,43 @@ def test_render_manifest_maps_folders_and_doc_types() -> None:
     assert manifest["doc_types"] == [
         {"id": "dt1", "name": "invoice", "description": "A bill.", "emoji": "📄"}
     ]
+
+
+def test_render_events_jsonl_one_object_per_line() -> None:
+    now = datetime(2026, 5, 1, tzinfo=UTC)
+    events = [
+        Event(
+            event_id="e1",
+            category=EventCategory.AUDIT,
+            event_type=EventType.FOLDER_CREATED,
+            folder_id="f-root",
+            recorded_at=now,
+            actor="system",
+            summary="Created folder Finanzen",
+        ),
+        Event(
+            event_id="e2",
+            category=EventCategory.CONTENT,
+            event_type=EventType.DATED_FACT,
+            document_id="d1",
+            occurred_at=now,
+            recorded_at=now,
+            actor="llm",
+            summary="Invoice dated 2026-05-01",
+            confidence=0.9,
+            details={"date": "2026-05-01"},
+        ),
+    ]
+
+    text = render_events_jsonl(events)
+
+    lines = text.splitlines()
+    assert len(lines) == 2
+    assert json.loads(lines[0]) == events[0].model_dump(mode="json")
+    assert json.loads(lines[1]) == events[1].model_dump(mode="json")
+    # Trailing newline so the file is POSIX-clean and append-friendly.
+    assert text.endswith("\n")
+
+
+def test_render_events_jsonl_empty() -> None:
+    assert render_events_jsonl([]) == ""
