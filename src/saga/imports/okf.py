@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -20,7 +21,7 @@ from pydantic import BaseModel, Field
 from saga.core.logging import get_logger
 from saga.core.models import Document, DocumentStatus, Event, ExtractedValue
 from saga.export.okf import render_notes_suffix
-from saga.pipeline.queue import INDEX_JOB
+from saga.pipeline.queue import INDEX_JOB, INGEST_JOB
 from saga.scripts.layout import backup_basename
 
 if TYPE_CHECKING:
@@ -302,6 +303,67 @@ class OkfBundleImporter:
         ]
         restored = await self._db.restore_events(remapped)
         return restored, len(remapped) - restored
+
+    # --- foreign bundle ----------------------------------------------------- #
+
+    async def _restore_foreign_folders(self, root: Path) -> dict[Path, str]:
+        """Rebuild folders from the bundle directory tree (each dir with index.md).
+
+        Returns a map ``{directory path -> new folder id}``. The root index.md is the
+        bundle index, not a folder. Directories are processed shallow-first so a parent
+        folder exists before its children.
+        """
+        dir_to_id: dict[Path, str] = {}
+        for index_file in sorted(root.rglob("index.md"), key=lambda p: len(p.parts)):  # noqa: ASYNC240
+            directory = index_file.parent
+            if directory == root:
+                continue
+            parent_id = dir_to_id.get(directory.parent)
+            folder = await self._db.create_folder(name=directory.name, parent_id=parent_id)
+            dir_to_id[directory] = folder.folder_id
+        return dir_to_id
+
+    async def _reenrich_concept(self, concept_path: Path, dir_to_id: dict[Path, str]) -> str:
+        """Store a foreign concept (seeding title/type/description) and enqueue ingest."""
+        fm, body_section = split_frontmatter(concept_path.read_text(encoding="utf-8"))  # noqa: ASYNC240
+        content = body_section.strip("\n")
+        title = fm.get("title") or concept_path.stem
+        doc_type = fm.get("type")
+
+        doc_type_id: str | None = None
+        if doc_type and doc_type != "document":
+            ensured = await self._db.ensure_doc_type(name=doc_type)
+            doc_type_id = ensured.doc_type_id
+
+        new_id = uuid.uuid4().hex
+        data = content.encode("utf-8")
+        minio_object = await self._minio.put_object(new_id, data, "text/markdown")
+        now = datetime.now(UTC)
+        document = Document(
+            document_id=new_id,
+            title=title,
+            filename=f"{title}.md",
+            mime_type="text/markdown",
+            size_bytes=len(data),
+            content_hash=hashlib.sha256(data).hexdigest(),
+            minio_object=minio_object,
+            status=DocumentStatus.PENDING,
+            content_markdown=content,
+            doc_type_id=doc_type_id,
+            summary=fm.get("description"),
+            created_at=now,
+            updated_at=now,
+        )
+        await self._db.create_document(document)
+
+        folder_id = dir_to_id.get(concept_path.parent)
+        if folder_id is not None:
+            await self._db.set_document_folders(
+                new_id, folder_ids=[folder_id], primary_id=folder_id
+            )
+
+        await self._queue.enqueue_job(INGEST_JOB, new_id)
+        return "imported"
 
     # --- documents ---------------------------------------------------------- #
 

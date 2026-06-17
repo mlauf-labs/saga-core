@@ -21,7 +21,7 @@ from saga.core.models import (
 from saga.events import EventQuery, TimelineService
 from saga.export.okf import render_concept
 from saga.imports.okf import OkfBundleImporter
-from saga.pipeline.queue import INDEX_JOB
+from saga.pipeline.queue import INDEX_JOB, INGEST_JOB
 from saga.scripts.layout import backup_basename
 from saga.storage.postgres import PostgresStore
 from tests.conftest import FakeQueue, InMemoryBinaryStore
@@ -278,3 +278,37 @@ async def test_restore_events_remaps_folder_id(store: PostgresStore) -> None:
     assert stored["e-content"].folder_id is None
     # Idempotent re-restore inserts nothing.
     assert await importer._restore_events(events, folder_map) == (0, 2)
+
+
+async def test_reenrich_foreign_bundle(tmp_path: Path, store: PostgresStore) -> None:
+    queue = FakeQueue()
+    importer = OkfBundleImporter(
+        db=store, minio=InMemoryBinaryStore(), queue=queue, config=AppConfig()
+    )
+    root = tmp_path / "okf-foreign"
+    (root / "Taxes").mkdir(parents=True)
+    (root / "index.md").write_text("# Index\n", encoding="utf-8")
+    (root / "Taxes" / "index.md").write_text("# Taxes\n", encoding="utf-8")
+    (root / "Taxes" / "note.md").write_text(
+        "---\ntype: invoice\ntitle: A Foreign Bill\ndescription: Imported note.\n---\n\n# Hello\n",
+        encoding="utf-8",
+    )
+
+    dir_to_id = await importer._restore_foreign_folders(root)
+    folder_names = set()
+    for fid in dir_to_id.values():
+        folder = await store.get_folder(fid)
+        assert folder is not None
+        folder_names.add(folder.name)
+    assert folder_names == {"Taxes"}
+
+    result = await importer._reenrich_concept(root / "Taxes" / "note.md", dir_to_id)
+    assert result == "imported"
+
+    docs, _ = await store.list_documents(page=1, page_size=10)
+    assert len(docs) == 1
+    doc = docs[0]
+    assert doc.title == "A Foreign Bill"
+    assert doc.doc_type == "invoice"  # seeded -> ensure_doc_type
+    assert doc.summary == "Imported note."
+    assert any(job == INGEST_JOB for job, _ in queue.jobs)
