@@ -1,6 +1,6 @@
 """Unit tests for the DocumentAnalyzer (structured-output library integration).
 
-``extract_from_text`` is patched with a recorder so no real LLM/network is used; the
+``extract_data_from_text`` is patched with a recorder so no real LLM/network is used; the
 recorder returns scripted Pydantic results per schema name and captures the system
 prompt / document text passed to each step.
 """
@@ -12,7 +12,7 @@ from typing import Any, cast
 
 import pytest
 from pydantic import BaseModel
-from saidex import ExtractionMode, StructuredOutputStats
+from saidex import ExtractDataStats, ExtractionMode
 
 from saga.core.models import DocType
 from saga.llm import analyzer as analyzer_module
@@ -49,7 +49,7 @@ class _Recorder:
         max_primary_retries: int = 3,
         max_fallback_retries: int = 3,
         retry_config: Any = None,
-    ) -> tuple[BaseModel | None, StructuredOutputStats]:
+    ) -> tuple[BaseModel | None, ExtractDataStats]:
         self.calls.append(
             {
                 "model": model,
@@ -62,12 +62,12 @@ class _Recorder:
                 "retry_config": retry_config,
             }
         )
-        return self.responses.get(schema.__name__), StructuredOutputStats()
+        return self.responses.get(schema.__name__), ExtractDataStats()
 
 
 def _patch(monkeypatch: pytest.MonkeyPatch, responses: dict[str, BaseModel | None]) -> _Recorder:
     recorder = _Recorder(responses)
-    monkeypatch.setattr(analyzer_module, "extract_from_text", recorder)
+    monkeypatch.setattr(analyzer_module, "extract_data_from_text", recorder)
     return recorder
 
 

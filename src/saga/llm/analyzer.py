@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 import openai
 from pydantic import Field, create_model
-from saidex import ExtractionMode, RetryConfig, extract_from_text, extract_with_tools
+from saidex import ExtractionMode, RetryConfig, extract_data_from_text, extract_data_with_tools
 
 from saga.core.logging import get_logger
 from saga.llm.callbacks import LlmCallLogger
@@ -173,7 +173,7 @@ class DocumentAnalyzer:
         all_callbacks: list[Any] = [callback, *(trace_callbacks or [])]
         _log.info("analysis_step_start", step=step, chars=len(text), mode=mode.value)
         started = time.monotonic()
-        result, stats = await extract_from_text(
+        result, stats = await extract_data_from_text(
             model,
             schema,
             text,
@@ -395,7 +395,7 @@ class DocumentAnalyzer:
         _log.info("analysis_step_start", step="folder_placement_agentic", chars=len(summary))
         started = time.monotonic()
 
-        result, stats = await extract_with_tools(
+        result, stats = await extract_data_with_tools(
             model,
             FolderDecision,
             summary,
