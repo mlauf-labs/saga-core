@@ -98,3 +98,44 @@ async def test_query_events_filters_by_folder_ids_and_limits(store: PostgresStor
     hits = await store.query_events(folder_ids=["f1", "f3"])
     assert sorted(e.folder_id for e in hits if e.folder_id is not None) == ["f1", "f3"]
     assert len(await store.query_events(limit=1)) == 1
+
+
+async def test_replace_content_events_replaces_only_content(store: PostgresStore) -> None:
+    await store.append_event(
+        _event(category=EventCategory.AUDIT, event_type=EventType.PLACEMENT, document_id="d1")
+    )
+    await store.replace_content_events(
+        "d1",
+        [
+            _event(
+                category=EventCategory.CONTENT,
+                event_type=EventType.DATED_FACT,
+                document_id="d1",
+                summary="old",
+            )
+        ],
+    )
+    await store.replace_content_events(
+        "d1",
+        [
+            _event(
+                category=EventCategory.CONTENT,
+                event_type=EventType.APPOINTMENT,
+                document_id="d1",
+                summary="new",
+            )
+        ],
+    )
+    content = await store.query_events(categories=[EventCategory.CONTENT], document_id="d1")
+    assert [e.summary for e in content] == ["new"]  # prior content replaced
+    audits = await store.query_events(categories=[EventCategory.AUDIT], document_id="d1")
+    assert len(audits) == 1  # audit untouched
+
+
+async def test_replace_content_events_empty_clears(store: PostgresStore) -> None:
+    await store.replace_content_events(
+        "d2",
+        [_event(category=EventCategory.CONTENT, event_type=EventType.DATED_FACT, document_id="d2")],
+    )
+    await store.replace_content_events("d2", [])
+    assert await store.query_events(categories=[EventCategory.CONTENT], document_id="d2") == []

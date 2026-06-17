@@ -28,6 +28,7 @@ from saga.pipeline.stages import (
     classify_doc_type,
     compute_similarity,
     convert_to_markdown,
+    extract_timeline,
     extract_values,
     index_chunks,
     place_in_folder,
@@ -126,6 +127,22 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
                 markdown=markdown,
                 db=db,
                 analyzer=analyzer,
+                trace_callbacks=callbacks,
+            )
+
+        # ------------------------------------------------------------------
+        # Stage 3b: extract content/timeline events (dates, appointments, recurring)
+        # ------------------------------------------------------------------
+        with tracer.step_span(
+            "extract_timeline",
+            input={"document_id": document_id},
+        ) as callbacks:
+            await extract_timeline(
+                document_id=document_id,
+                markdown=markdown,
+                db=db,
+                analyzer=analyzer,
+                min_confidence=config.timeline.content_min_confidence,
                 trace_callbacks=callbacks,
             )
 

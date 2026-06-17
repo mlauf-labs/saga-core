@@ -7,12 +7,13 @@ chunker, embedder) are replaced by small inline fakes so no network is required.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 
 from saga.core.errors import NotFoundError
-from saga.core.models import DocumentStatus, ExtractedValue
+from saga.core.models import DocumentStatus, Event, EventCategory, EventType, ExtractedValue
 from saga.llm.schemas import (
     DocTypeAssignment,
     ExtractedValueOut,
@@ -20,11 +21,14 @@ from saga.llm.schemas import (
     FolderPlacement,
     NewFolder,
     Summary,
+    TimelineEventOut,
+    TimelineExtraction,
     ValueExtraction,
 )
 from saga.pipeline.stages import (
     classify_doc_type,
     convert_to_markdown,
+    extract_timeline,
     extract_values,
     index_chunks,
     place_in_folder,
@@ -113,11 +117,13 @@ class _FakeAnalyzer:
         values: ValueExtraction | None = None,
         summary: Summary | None = None,
         placement: FolderPlacement | None = None,
+        timeline: TimelineExtraction | None = None,
     ) -> None:
         self._doc_type = doc_type
         self._values = values
         self._summary = summary
         self._placement = placement
+        self._timeline = timeline
         self.calls: dict[str, dict[str, Any]] = {}
 
     async def classify_doc_type(self, **kwargs: Any) -> DocTypeAssignment | None:
@@ -127,6 +133,10 @@ class _FakeAnalyzer:
     async def extract_values(self, **kwargs: Any) -> ValueExtraction | None:
         self.calls["extract_values"] = kwargs
         return self._values
+
+    async def extract_timeline(self, **kwargs: Any) -> TimelineExtraction | None:
+        self.calls["extract_timeline"] = kwargs
+        return self._timeline
 
     async def summarize(self, **kwargs: Any) -> Summary | None:
         self.calls["summarize"] = kwargs
@@ -491,3 +501,99 @@ async def test_index_chunks_missing_document_raises(db: PostgresStore) -> None:
             chunker=_FakeChunker([]),  # type: ignore[arg-type]
             embedder=FakeEmbedder(),  # type: ignore[arg-type]
         )
+
+
+# --------------------------------------------------------------------------- #
+# extract_timeline                                                              #
+# --------------------------------------------------------------------------- #
+
+
+def _make_content_event(document_id: str) -> Event:
+    now = datetime(2026, 5, 1, tzinfo=UTC)
+    return Event(
+        event_id="",
+        category=EventCategory.CONTENT,
+        event_type=EventType.DATED_FACT,
+        document_id=document_id,
+        occurred_at=now,
+        recorded_at=now,
+        actor="extraction",
+        summary="prior",
+    )
+
+
+async def test_extract_timeline_persists_filtered_content_events(db: PostgresStore) -> None:
+    analyzer = _FakeAnalyzer(
+        timeline=TimelineExtraction(
+            events=[
+                TimelineEventOut(
+                    kind="future", description="Policy expiry", date="2027-04-30", confidence=0.9
+                ),
+                TimelineEventOut(kind="past", description="No date", date="", confidence=0.9),
+                TimelineEventOut(
+                    kind="past", description="Low conf", date="2026-01-01", confidence=0.1
+                ),
+                TimelineEventOut(
+                    kind="recurring",
+                    description="Annual renewal",
+                    date="2026-05-01",
+                    end_date="2030-05-01",
+                    recurrence="FREQ=YEARLY",
+                    confidence=0.8,
+                ),
+            ]
+        )
+    )
+    count = await extract_timeline(
+        document_id="d1",
+        markdown="text",
+        db=db,
+        analyzer=analyzer,  # type: ignore[arg-type]
+        min_confidence=0.5,
+    )
+    assert count == 2  # dateless + low-confidence dropped
+    events = await db.query_events(categories=[EventCategory.CONTENT], document_id="d1")
+    types = {e.event_type for e in events}
+    assert types == {EventType.APPOINTMENT, EventType.RECURRING}
+    recurring = next(e for e in events if e.event_type == EventType.RECURRING)
+    assert recurring.details["recurrence"] == "FREQ=YEARLY"
+    assert recurring.details["end_date"] == "2030-05-01"
+    assert recurring.summary == "Annual renewal"
+
+
+async def test_extract_timeline_keeps_prior_events_on_failure(db: PostgresStore) -> None:
+    await db.replace_content_events("d9", [_make_content_event("d9")])
+    analyzer = _FakeAnalyzer(timeline=None)
+    count = await extract_timeline(
+        document_id="d9",
+        markdown="x",
+        db=db,
+        analyzer=analyzer,  # type: ignore[arg-type]
+        min_confidence=0.5,
+    )
+    assert count == 0
+    events = await db.query_events(categories=[EventCategory.CONTENT], document_id="d9")
+    assert len(events) == 1  # prior kept, not wiped
+
+
+async def test_extract_timeline_continues_on_persist_error() -> None:
+    class _FailingDB:
+        async def replace_content_events(self, document_id: str, events: object) -> None:
+            raise RuntimeError("db down")
+
+    analyzer = _FakeAnalyzer(
+        timeline=TimelineExtraction(
+            events=[
+                TimelineEventOut(kind="future", description="x", date="2027-01-01", confidence=0.9)
+            ]
+        )
+    )
+    # A persistence failure in this best-effort stage must not raise (ingestion continues).
+    count = await extract_timeline(
+        document_id="dX",
+        markdown="t",
+        db=_FailingDB(),  # type: ignore[arg-type]
+        analyzer=analyzer,  # type: ignore[arg-type]
+        min_confidence=0.5,
+    )
+    assert count == 0

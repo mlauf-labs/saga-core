@@ -16,6 +16,8 @@ from saga.llm.schemas import (
     FolderPlacement,
     NewFolder,
     Summary,
+    TimelineEventOut,
+    TimelineExtraction,
     ValueExtraction,
 )
 
@@ -135,3 +137,32 @@ def test_extracted_value_to_model() -> None:
     assert model.type == "identifier"
     assert model.value == "INV-1"
     assert model.confidence == 0.8
+
+
+def test_timeline_extraction_parses_and_defaults() -> None:
+    raw = {
+        "events": [
+            {
+                "kind": "future",
+                "description": "Policy expiry",
+                "date": "2027-04-30",
+                "confidence": 0.9,
+            }
+        ]
+    }
+    ex = TimelineExtraction.model_validate(raw)
+    assert ex.events[0].kind == "future"
+    assert ex.events[0].end_date is None
+    assert ex.events[0].recurrence is None
+    assert ex.events[0].confidence == 0.9
+
+
+def test_timeline_event_defaults_kind_past() -> None:
+    ev = TimelineEventOut.model_validate({"description": "x", "date": "2026-01-01"})
+    assert ev.kind == "past"
+    assert ev.confidence == 1.0
+
+
+def test_timeline_extraction_unwraps_json_string_events() -> None:
+    ex = TimelineExtraction.model_validate({"events": '[{"description":"x","date":"2026-01-01"}]'})
+    assert ex.events[0].date == "2026-01-01"

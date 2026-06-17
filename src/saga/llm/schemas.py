@@ -192,6 +192,103 @@ class ValueExtraction(BaseModel):
         return data
 
 
+class TimelineEventOut(BaseModel):
+    """A single dated event, appointment, or recurring obligation found in the text."""
+
+    model_config = _LLM_MODEL_CONFIG
+
+    kind: str = Field(
+        default="past",
+        description=(
+            "One of: 'past' (something that happened on a date), 'future' (an upcoming "
+            "appointment/deadline), or 'recurring' (a repeating obligation)."
+        ),
+    )
+    description: str = Field(
+        default="",
+        description="A short human-readable description of the event, e.g. 'Policy concluded'.",
+    )
+    date: str = Field(
+        default="",
+        description=(
+            "The event's date as ISO 'YYYY-MM-DD'. For a recurring event, the start/anchor "
+            "date. Resolve relative expressions only against a reference date stated in the "
+            "document; otherwise leave empty."
+        ),
+    )
+    end_date: str | None = Field(
+        default=None,
+        description=(
+            "Optional ISO 'YYYY-MM-DD' end date for a period or a recurrence that ends. "
+            "Null when it is a single point in time or the end is open/unknown."
+        ),
+    )
+    recurrence: str | None = Field(
+        default=None,
+        description=(
+            "For 'recurring' events only: an RRULE pattern (RFC 5545), e.g. 'FREQ=YEARLY'. "
+            "Describe only the repetition pattern; do not encode the end (use end_date). "
+            "Null for non-recurring events."
+        ),
+    )
+    source_quote: str = Field(
+        default="",
+        description="A short verbatim quote from the document supporting this event.",
+    )
+    confidence: float = Field(
+        default=1.0,
+        description="How confident/relevant this event is, from 0.0 to 1.0.",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce(cls, data: Any) -> Any:  # noqa: ANN401 - tolerant of varied LLM shapes
+        if not isinstance(data, dict):
+            return data
+        coerced = dict(data)
+        for key in ("kind", "description", "date", "source_quote"):
+            if coerced.get(key) is not None:
+                coerced[key] = _stringify(coerced[key])
+        for key in ("end_date", "recurrence"):
+            value = coerced.get(key)
+            if value is not None and value != "":
+                coerced[key] = _stringify(value)
+            elif value == "":
+                coerced[key] = None
+        return coerced
+
+
+class TimelineExtraction(BaseModel):
+    """All dated events extracted from a document (Phase 2 content stream)."""
+
+    model_config = _LLM_MODEL_CONFIG
+
+    events: list[TimelineEventOut] = Field(
+        default_factory=list,
+        description=(
+            "Every dated event, appointment, deadline, or recurring obligation described in "
+            "the document. Return an empty list if none are present. Do NOT restate raw "
+            "identifiers or numbers (those are captured separately)."
+        ),
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_events_list(cls, data: Any) -> Any:  # noqa: ANN401
+        """Unwrap ``events`` when a model serialises the array as a JSON string."""
+        if not isinstance(data, dict):
+            return data
+        raw = data.get("events")
+        if isinstance(raw, str):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return {**data, "events": parsed}
+            except (ValueError, json.JSONDecodeError):
+                pass
+        return data
+
+
 class Summary(BaseModel):
     """A short title and summary for a document (FR-14)."""
 

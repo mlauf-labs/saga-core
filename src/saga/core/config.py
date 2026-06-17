@@ -181,6 +181,8 @@ class TimelineConfig(BaseModel):
     default_page_size: int = 50
     # Hard upper bound on page size to protect query performance.
     max_page_size: int = 500
+    # Minimum LLM relevance/confidence for a content/timeline event to be kept.
+    content_min_confidence: float = 0.5
 
 
 class RedisConfig(BaseModel):
