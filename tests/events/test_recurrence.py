@@ -6,6 +6,12 @@ from saga.core.models import Event, EventCategory, EventType
 from saga.events.recurrence import expand_recurrences
 
 
+def _iso(event: Event) -> str:
+    """ISO date of an occurrence (synthetic occurrences always have occurred_at set)."""
+    assert event.occurred_at is not None
+    return event.occurred_at.date().isoformat()
+
+
 def _rule(
     recurrence: str | None, *, anchor: str = "2026-05-01", end_date: str | None = None
 ) -> Event:
@@ -35,9 +41,9 @@ def test_expands_yearly_rule_within_window() -> None:
         window_end=datetime(2028, 12, 31, tzinfo=UTC),
         max_occurrences=366,
     )
-    dates = sorted(e.occurred_at.date().isoformat() for e in occ)
+    dates = sorted(_iso(e) for e in occ)
     assert dates == ["2026-05-01", "2027-05-01", "2028-05-01"]
-    first = next(e for e in occ if e.occurred_at.date().isoformat() == "2027-05-01")
+    first = next(e for e in occ if _iso(e) == "2027-05-01")
     assert first.event_id == "r1@2027-05-01"
     assert first.event_type == EventType.RECURRING
     assert first.details["occurrence_of"] == "r1"
@@ -52,7 +58,7 @@ def test_window_excludes_outside_occurrences() -> None:
         window_end=datetime(2027, 12, 31, tzinfo=UTC),
         max_occurrences=366,
     )
-    assert [e.occurred_at.date().isoformat() for e in occ] == ["2027-05-01"]
+    assert [_iso(e) for e in occ] == ["2027-05-01"]
 
 
 def test_end_date_bounds_expansion() -> None:
@@ -63,7 +69,7 @@ def test_end_date_bounds_expansion() -> None:
         window_end=datetime(2030, 12, 31, tzinfo=UTC),
         max_occurrences=366,
     )
-    assert [e.occurred_at.date().isoformat() for e in occ] == ["2026-05-01", "2027-05-01"]
+    assert [_iso(e) for e in occ] == ["2026-05-01", "2027-05-01"]
 
 
 def test_invalid_rule_is_skipped() -> None:
