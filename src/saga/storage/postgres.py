@@ -11,19 +11,22 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy import (
     JSON,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     delete,
     func,
+    or_,
     select,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -41,6 +44,9 @@ from saga.core.models import (
     DocType,
     Document,
     DocumentStatus,
+    Event,
+    EventCategory,
+    EventType,
     ExtractedValue,
     Folder,
     FolderNode,
@@ -161,6 +167,38 @@ class DocumentFolderRow(Base):
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     assigned_by: Mapped[str] = mapped_column(String(16), default="user", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class EventRow(Base):
+    __tablename__ = "events"
+    __table_args__ = (
+        Index("ix_events_document_id", "document_id"),
+        Index("ix_events_folder_id", "folder_id"),
+        Index("ix_events_category", "category"),
+        Index("ix_events_event_type", "event_type"),
+        Index("ix_events_occurred_at", "occurred_at"),
+        Index("ix_events_recorded_at", "recorded_at"),
+        # NULLs are distinct in both Postgres and SQLite, so content events
+        # (dedupe_key NULL, Phase 2) never collide; audit events de-duplicate.
+        Index("uq_events_dedupe_key", "dedupe_key", unique=True),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    category: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    # No foreign keys: the audit log is append-only history that may outlive the
+    # documents/folders it references.
+    document_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    folder_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, nullable=False
+    )
+    actor: Mapped[str] = mapped_column(String(16), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    dedupe_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    details: Mapped[dict[str, Any]] = mapped_column(_JSON, default=dict, nullable=False)
 
 
 # --------------------------------------------------------------------------- #
@@ -962,6 +1000,101 @@ class PostgresStore:
             await session.flush()
             return await self._document_folders(session, document_id)
 
+    # ------------------------------ events --------------------------------- #
+
+    async def append_event(self, event: Event) -> bool:
+        """Persist *event*; return ``False`` (no-op) if its ``dedupe_key`` already exists.
+
+        Uses a portable check-then-insert (works on Postgres and the sqlite test
+        engine). Placement runs under a global Redis lock and re-ingest is sequential
+        per document, so the check-then-insert race window is not a concern; the unique
+        index on ``dedupe_key`` is the backstop.
+        """
+        async with self._sessions()() as session, session.begin():
+            if event.dedupe_key is not None:
+                existing = (
+                    await session.execute(
+                        select(EventRow.id).where(EventRow.dedupe_key == event.dedupe_key)
+                    )
+                ).first()
+                if existing is not None:
+                    return False
+            session.add(
+                EventRow(
+                    id=event.event_id or _new_id(),
+                    category=str(event.category),
+                    event_type=str(event.event_type),
+                    document_id=event.document_id,
+                    folder_id=event.folder_id,
+                    occurred_at=event.occurred_at,
+                    recorded_at=event.recorded_at,
+                    actor=event.actor,
+                    summary=event.summary,
+                    confidence=event.confidence,
+                    dedupe_key=event.dedupe_key,
+                    details=dict(event.details),
+                )
+            )
+            return True
+
+    async def query_events(
+        self,
+        *,
+        categories: Sequence[EventCategory] | None = None,
+        event_types: Sequence[EventType] | None = None,
+        document_id: str | None = None,
+        folder_ids: Sequence[str] | None = None,
+        document_ids: Sequence[str] | None = None,
+        occurred_from: datetime | None = None,
+        occurred_to: datetime | None = None,
+        order_by: Literal["recorded_at", "occurred_at"] = "recorded_at",
+        descending: bool = True,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[Event]:
+        """Read events with optional filters. Folder subtree expansion is the caller's job."""
+        stmt = select(EventRow)
+        if categories:
+            stmt = stmt.where(EventRow.category.in_([str(c) for c in categories]))
+        if event_types:
+            stmt = stmt.where(EventRow.event_type.in_([str(t) for t in event_types]))
+        if document_id is not None:
+            stmt = stmt.where(EventRow.document_id == document_id)
+        # Folder scope (design §6.2): an event is relevant to a folder if it is scoped
+        # to that folder OR concerns a document currently in that folder — because
+        # document-level events record only the primary folder. Combine the two with OR.
+        folder_clause = EventRow.folder_id.in_(list(folder_ids)) if folder_ids is not None else None
+        docids_clause = (
+            EventRow.document_id.in_(list(document_ids)) if document_ids is not None else None
+        )
+        if folder_clause is not None and docids_clause is not None:
+            stmt = stmt.where(or_(folder_clause, docids_clause))
+        elif folder_clause is not None:
+            stmt = stmt.where(folder_clause)
+        elif docids_clause is not None:
+            stmt = stmt.where(docids_clause)
+        if occurred_from is not None:
+            stmt = stmt.where(EventRow.occurred_at >= occurred_from)
+        if occurred_to is not None:
+            stmt = stmt.where(EventRow.occurred_at <= occurred_to)
+        sort_col = EventRow.occurred_at if order_by == "occurred_at" else EventRow.recorded_at
+        # Secondary sort on id for deterministic pagination when timestamps tie.
+        if descending:
+            stmt = stmt.order_by(sort_col.desc(), EventRow.id.desc())
+        else:
+            stmt = stmt.order_by(sort_col.asc(), EventRow.id.asc())
+        stmt = stmt.limit(limit).offset(offset)
+        async with self._sessions()() as session:
+            rows = (await session.execute(stmt)).scalars().all()
+        return [_to_event(row) for row in rows]
+
+    async def document_ids_in_folders(self, folder_ids: Sequence[str]) -> list[str]:
+        """Return ids of documents that are members of any of *folder_ids* (no subtree)."""
+        if not folder_ids:
+            return []
+        async with self._sessions()() as session:
+            return await self._folder_member_doc_ids(session, folder_ids)
+
     # ----------------------------- internals ------------------------------- #
 
     async def _document_folders(self, session: AsyncSession, document_id: str) -> list[FolderRef]:
@@ -1116,6 +1249,23 @@ def _to_folder(row: FolderRow, *, notes: list[Note]) -> Folder:
         notes=notes,
         created_at=_aware(row.created_at),
         updated_at=_aware(row.updated_at),
+    )
+
+
+def _to_event(row: EventRow) -> Event:
+    return Event(
+        event_id=row.id,
+        category=EventCategory(row.category),
+        event_type=EventType(row.event_type),
+        document_id=row.document_id,
+        folder_id=row.folder_id,
+        occurred_at=_aware(row.occurred_at) if row.occurred_at is not None else None,
+        recorded_at=_aware(row.recorded_at),
+        actor=row.actor,
+        summary=row.summary,
+        confidence=row.confidence,
+        dedupe_key=row.dedupe_key,
+        details=dict(row.details or {}),
     )
 
 

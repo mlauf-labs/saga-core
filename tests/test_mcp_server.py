@@ -38,6 +38,7 @@ ALL_TOOL_NAMES = {
     "get_folder",
     "list_documents_in_folder",
     "list_doc_types",
+    "get_timeline",
     "update_document_metadata",
     "assign_document_to_folder",
     "remove_document_from_folder",

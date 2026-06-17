@@ -26,6 +26,7 @@ if TYPE_CHECKING:
         HybridSearchResult,
         Note,
     )
+    from saga.events import EventRecorder, TimelineService
 
 
 class Database(Protocol):
@@ -221,6 +222,8 @@ class Services:
     minio: BinaryStore
     queue: JobQueue
     search: SearchEngine
+    events: EventRecorder | None = None
+    timeline: TimelineService | None = None
 
 
 def get_services(request: Request) -> Services:

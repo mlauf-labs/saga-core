@@ -91,6 +91,13 @@ similarity:
   ancestor_credit: 0.3
   max_folder_votes: 5
 
+timeline:
+  # Number of top related documents included in event rationale.
+  rationale_top_n: 5
+  # Default and maximum page sizes for timeline list endpoints.
+  default_page_size: 50
+  max_page_size: 500
+
 generation:
   # Natural language used for LLM-generated content: summaries, folder names/descriptions,
   # doc-type descriptions, and folder-placement rationale.  Use a full name understood by

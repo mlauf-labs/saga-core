@@ -18,10 +18,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from saga import __version__
 from saga.api.dependencies import Services
 from saga.api.errors import register_exception_handlers
-from saga.api.routes import doctypes, documents, export, folders, llm, search
+from saga.api.routes import doctypes, documents, export, folders, llm, search, timeline
 from saga.core.config import AppConfig, load_config
 from saga.core.logging import configure_logging, get_logger
 from saga.embeddings import build_embedding_provider, load_embeddings_config
+from saga.events import EventRecorder, TimelineService
 from saga.llm import load_llm_config
 from saga.ollama import (
     collect_required_ollama_models,
@@ -99,6 +100,8 @@ def create_app(config: AppConfig | None = None, services: Services | None = None
         await db.bootstrap()
         await opensearch.bootstrap()
         await minio.bootstrap()
+        events = EventRecorder(db, rationale_top_n=cfg.timeline.rationale_top_n)
+        timeline_service = TimelineService(db)
         app.state.services = Services(
             config=cfg,
             db=db,
@@ -106,6 +109,8 @@ def create_app(config: AppConfig | None = None, services: Services | None = None
             minio=minio,
             queue=queue,
             search=search_service,
+            events=events,
+            timeline=timeline_service,
         )
         # Ollama fleet visibility: remember the servers for /health and run a
         # check-only model verification in the background (the API must come up
@@ -172,6 +177,7 @@ def create_app(config: AppConfig | None = None, services: Services | None = None
     app.include_router(search.router)
     app.include_router(export.router)
     app.include_router(llm.router)
+    app.include_router(timeline.router)
 
     @app.get("/health", tags=["system"])
     async def health() -> dict[str, Any]:
