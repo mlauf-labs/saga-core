@@ -311,16 +311,23 @@ class OkfBundleImporter:
 
         Returns a map ``{directory path -> new folder id}``. The root index.md is the
         bundle index, not a folder. Directories are processed shallow-first so a parent
-        folder exists before its children.
+        folder exists before its children. Idempotent by ``(parent_id, name)`` so a
+        re-import reuses existing folders instead of raising on a name clash.
         """
+        existing = await self._db.list_folders()
+        by_key: dict[tuple[str | None, str], str] = {
+            (f.parent_id, f.name): f.folder_id for f in existing
+        }
         dir_to_id: dict[Path, str] = {}
         for index_file in sorted(root.rglob("index.md"), key=lambda p: len(p.parts)):  # noqa: ASYNC240
             directory = index_file.parent
             if directory == root:
                 continue
             parent_id = dir_to_id.get(directory.parent)
-            folder = await self._db.create_folder(name=directory.name, parent_id=parent_id)
-            dir_to_id[directory] = folder.folder_id
+            _created, _reused, new_id = await self._ensure_folder(
+                {"name": directory.name}, parent_id, by_key
+            )
+            dir_to_id[directory] = new_id
         return dir_to_id
 
     async def _reenrich_concept(self, concept_path: Path, dir_to_id: dict[Path, str]) -> str:

@@ -311,4 +311,21 @@ async def test_reenrich_foreign_bundle(tmp_path: Path, store: PostgresStore) -> 
     assert doc.title == "A Foreign Bill"
     assert doc.doc_type == "invoice"  # seeded -> ensure_doc_type
     assert doc.summary == "Imported note."
-    assert any(job == INGEST_JOB for job, _ in queue.jobs)
+    # The doc is placed in the rebuilt Taxes folder, and the FULL pipeline is enqueued.
+    taxes_id = dir_to_id[root / "Taxes"]
+    assert [r.folder_id for r in await store.get_document_folders(doc.document_id)] == [taxes_id]
+    assert (INGEST_JOB, (doc.document_id,)) in queue.jobs
+
+
+async def test_restore_foreign_folders_idempotent(tmp_path: Path, store: PostgresStore) -> None:
+    importer = _importer(store)
+    root = tmp_path / "okf-foreign"
+    (root / "Taxes").mkdir(parents=True)
+    (root / "index.md").write_text("# Index\n", encoding="utf-8")
+    (root / "Taxes" / "index.md").write_text("# Taxes\n", encoding="utf-8")
+
+    first = await importer._restore_foreign_folders(root)
+    second = await importer._restore_foreign_folders(root)  # must not raise / duplicate
+
+    assert first == second
+    assert len(await store.list_folders()) == 1
