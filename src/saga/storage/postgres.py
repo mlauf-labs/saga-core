@@ -1055,9 +1055,13 @@ class PostgresStore:
                 ).all()
             }
             restored = 0
+            seen_in_batch: set[str] = set()
             for event in events:
-                if event.event_id in existing:
+                # Skip events already in the DB and duplicate ids within this batch
+                # (both would otherwise collide on the ``id`` primary key).
+                if event.event_id in existing or event.event_id in seen_in_batch:
                     continue
+                seen_in_batch.add(event.event_id)
                 session.add(
                     EventRow(
                         id=event.event_id,

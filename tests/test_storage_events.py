@@ -43,3 +43,12 @@ async def test_restore_events_inserts_verbatim_and_skips_existing(store: Postgre
 
 async def test_restore_events_empty_is_noop(store: PostgresStore) -> None:
     assert await store.restore_events([]) == 0
+
+
+async def test_restore_events_dedupes_within_batch(store: PostgresStore) -> None:
+    # A duplicate event_id within one batch must not cause a primary-key collision.
+    restored = await store.restore_events([_event("e1"), _event("e1"), _event("e2")])
+
+    assert restored == 2
+    all_events = await TimelineService(store).query(EventQuery(limit=100))
+    assert {e.event_id for e in all_events} == {"e1", "e2"}
