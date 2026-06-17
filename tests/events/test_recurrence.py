@@ -69,8 +69,9 @@ def test_end_date_bounds_expansion() -> None:
 def test_invalid_rule_is_skipped() -> None:
     bad = _rule("FREQ=NONSENSE")
     missing = _rule(None)
+    no_anchor = _rule("FREQ=YEARLY").model_copy(update={"occurred_at": None})
     occ = expand_recurrences(
-        [bad, missing],
+        [bad, missing, no_anchor],
         window_start=datetime(2026, 1, 1, tzinfo=UTC),
         window_end=datetime(2028, 1, 1, tzinfo=UTC),
         max_occurrences=366,

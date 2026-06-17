@@ -25,7 +25,10 @@ def _parse_end(value: object) -> datetime | None:
         parsed = datetime.fromisoformat(value)
     except ValueError:
         return None
-    return parsed.replace(hour=23, minute=59, second=59, tzinfo=UTC)
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(UTC)
+    # Inclusive end-of-day so an occurrence ON the end date is kept.
+    return parsed.replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=UTC)
 
 
 def _occurrence(rule: Event, occurred_at: datetime) -> Event:
