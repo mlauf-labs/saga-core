@@ -21,6 +21,7 @@ from saga.core.models import (
 from saga.export.okf import render_concept
 from saga.imports.okf import OkfBundleImporter
 from saga.pipeline.queue import INDEX_JOB
+from saga.scripts.layout import backup_basename
 from saga.storage.postgres import PostgresStore
 from tests.conftest import FakeQueue, InMemoryBinaryStore
 
@@ -181,7 +182,7 @@ async def test_restore_document_faithful(tmp_path: Path, store: PostgresStore) -
 
 async def test_restore_document_skips_existing_saga_id(
     tmp_path: Path, store: PostgresStore
-) -> None:  # noqa: E501
+) -> None:
     importer = OkfBundleImporter(
         db=store, minio=InMemoryBinaryStore(), queue=FakeQueue(), config=AppConfig()
     )
@@ -204,3 +205,40 @@ async def test_restore_document_skips_existing_saga_id(
 
     result = await importer._restore_document(concept, doctype_ids={}, folder_map=folder_map)
     assert result == "skipped"
+
+
+async def test_restore_document_replace_dedup(tmp_path: Path, store: PostgresStore) -> None:
+    importer = OkfBundleImporter(
+        db=store, minio=InMemoryBinaryStore(), queue=FakeQueue(), config=AppConfig()
+    )
+    importer._config.dedup.on_duplicate = "replace"
+    concept = tmp_path / "Rechnung-ACME__doc-1.md"
+    concept.write_text(_concept_text("f-src"), encoding="utf-8")
+    await importer._restore_document(concept, doctype_ids={}, folder_map={})
+
+    # Re-import the same saga_id: "replace" deletes then recreates (not skipped).
+    result = await importer._restore_document(concept, doctype_ids={}, folder_map={})
+
+    assert result == "imported"
+    docs, total = await store.list_documents(page=1, page_size=10)
+    assert total == 1  # no duplicate row
+    assert docs[0].document_id == "doc-1"
+
+
+async def test_restore_document_restores_sidecar_binary(
+    tmp_path: Path, store: PostgresStore
+) -> None:
+    minio = InMemoryBinaryStore()
+    importer = OkfBundleImporter(
+        db=store, minio=minio, queue=FakeQueue(), config=AppConfig()
+    )
+    concept = tmp_path / "Rechnung-ACME__doc-1.md"
+    concept.write_text(_concept_text("f-src"), encoding="utf-8")
+    # A with-originals export places the binary next to the concept (same basename).
+    sidecar = tmp_path / f"{backup_basename('doc-1', 'Rechnung ACME')}.pdf"
+    sidecar.write_bytes(b"%PDF-1.7 real bytes")
+
+    await importer._restore_document(concept, doctype_ids={}, folder_map={})
+
+    # The exact original binary (not the markdown body) is stored under the document id.
+    assert minio.objects["doc-1"] == b"%PDF-1.7 real bytes"
