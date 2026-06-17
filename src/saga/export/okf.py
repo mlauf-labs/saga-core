@@ -221,7 +221,8 @@ class OkfBundleBuilder:
         if has_unfiled:
             root_subfolders.append(("Unfiled", "_unfiled/index.md", None))
         self._add(
-            tar, f"{root}/index.md",
+            tar,
+            f"{root}/index.md",
             render_index("Index", subfolders=root_subfolders, documents=[]),
         )
 
@@ -236,7 +237,8 @@ class OkfBundleBuilder:
             fdocs = docs_by_folder.get(folder.folder_id, [])
             doc_entries = [(d.title, _concept_filename(d), d.summary) for d in fdocs]
             self._add(
-                tar, f"{base}/index.md",
+                tar,
+                f"{base}/index.md",
                 render_index(heading, subfolders=subs, documents=doc_entries),
             )
 
@@ -252,14 +254,13 @@ class OkfBundleBuilder:
             unfiled = docs_by_folder[None]
             entries = [(d.title, _concept_filename(d), d.summary) for d in unfiled]
             self._add(
-                tar, f"{base}/index.md",
+                tar,
+                f"{base}/index.md",
                 render_index("Unfiled", subfolders=[], documents=entries),
             )
             await self._write_documents(tar, base, unfiled)
 
-    async def _write_documents(
-        self, tar: tarfile.TarFile, base: str, docs: list[Document]
-    ) -> None:
+    async def _write_documents(self, tar: tarfile.TarFile, base: str, docs: list[Document]) -> None:
         for d in docs:
             text = render_concept(
                 d, store_name=self._store_name, public_base_url=self._public_base_url

@@ -58,8 +58,12 @@ async def _seed(store: PostgresStore) -> None:
 async def test_write_bundle_lays_out_index_and_concept_files(store: PostgresStore) -> None:
     await _seed(store)
     builder = OkfBundleBuilder(
-        db=store, minio=_Minio(), timeline=_Timeline(),
-        store_name="saga", public_base_url=None, with_originals=False,
+        db=store,
+        minio=_Minio(),
+        timeline=_Timeline(),
+        store_name="saga",
+        public_base_url=None,
+        with_originals=False,
     )
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
@@ -79,8 +83,12 @@ async def test_write_bundle_lays_out_index_and_concept_files(store: PostgresStor
 async def test_write_bundle_with_originals_includes_binary(store: PostgresStore) -> None:
     await _seed(store)
     builder = OkfBundleBuilder(
-        db=store, minio=_Minio(), timeline=_Timeline(),
-        store_name="saga", public_base_url=None, with_originals=True,
+        db=store,
+        minio=_Minio(),
+        timeline=_Timeline(),
+        store_name="saga",
+        public_base_url=None,
+        with_originals=True,
     )
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:

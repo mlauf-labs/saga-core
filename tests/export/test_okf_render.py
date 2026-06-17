@@ -51,13 +51,19 @@ def test_render_concept_frontmatter_body_and_notes() -> None:
         doc_type=None,
         folders=[FolderRef(folder_id="f1", name="Finanzen", is_primary=True)],
         extracted_values=[ExtractedValue(key="total", type="money", value="9.99")],
-        notes=[Note(note_id="n1", content="Check me", created_at=datetime(2026, 5, 1, tzinfo=UTC),
-                    updated_at=datetime(2026, 5, 1, tzinfo=UTC))],
+        notes=[
+            Note(
+                note_id="n1",
+                content="Check me",
+                created_at=datetime(2026, 5, 1, tzinfo=UTC),
+                updated_at=datetime(2026, 5, 1, tzinfo=UTC),
+            )
+        ],
     )
     text = render_concept(doc, store_name="saga", public_base_url=None)
     assert text.startswith("---\n")
     front, _, body = text.partition("\n---\n")
-    fm = yaml.safe_load(front[len("---\n"):])
+    fm = yaml.safe_load(front[len("---\n") :])
     assert fm["type"] == "document"
     assert fm["title"] == "Rechnung ACME"
     assert fm["resource"] == "saga://saga/documents/d1"
@@ -73,8 +79,10 @@ def test_render_index_lists_subfolders_and_documents() -> None:
     text = render_index(
         "Finanzen",
         subfolders=[("2026", "2026/index.md", "Year 2026")],
-        documents=[("Rechnung ACME", "Rechnung-ACME__d1.md", "One invoice."),
-                   ("Notiz", "Notiz__d2.md", None)],
+        documents=[
+            ("Rechnung ACME", "Rechnung-ACME__d1.md", "One invoice."),
+            ("Notiz", "Notiz__d2.md", None),
+        ],
     )
     assert text.startswith("# Finanzen")
     assert "## Subfolders" in text
@@ -101,12 +109,20 @@ def _event(
 
 def test_render_log_groups_by_date_newest_first_with_category_tags() -> None:
     events = [
-        _event(EventCategory.AUDIT, EventType.PLACEMENT,
-               occurred="2026-06-13T10:00:00+00:00", recorded="2026-06-13T10:00:00+00:00",
-               summary="Placed in 1 folder."),
-        _event(EventCategory.CONTENT, EventType.APPOINTMENT,
-               occurred="2026-05-01T00:00:00+00:00", recorded="2026-06-13T10:00:00+00:00",
-               summary="Policy expiry."),
+        _event(
+            EventCategory.AUDIT,
+            EventType.PLACEMENT,
+            occurred="2026-06-13T10:00:00+00:00",
+            recorded="2026-06-13T10:00:00+00:00",
+            summary="Placed in 1 folder.",
+        ),
+        _event(
+            EventCategory.CONTENT,
+            EventType.APPOINTMENT,
+            occurred="2026-05-01T00:00:00+00:00",
+            recorded="2026-06-13T10:00:00+00:00",
+            summary="Policy expiry.",
+        ),
     ]
     text = render_log("Änderungsverlauf — Finanzen", events)
     assert text.startswith("# Änderungsverlauf — Finanzen")
