@@ -372,6 +372,70 @@ class OkfBundleImporter:
         await self._queue.enqueue_job(INGEST_JOB, new_id)
         return "imported"
 
+    # --- orchestration ------------------------------------------------------ #
+
+    @staticmethod
+    def _concept_files(root: Path) -> list[Path]:
+        """All concept markdown files under *root* (excluding the OKF reserved files)."""
+        return sorted(p for p in root.rglob("*.md") if p.name not in {"index.md", "log.md"})
+
+    def _bundle_root(self, bundle_dir: Path, manifest_path: Path | None) -> Path:
+        if manifest_path is not None:
+            return manifest_path.parent
+        index = self._find(bundle_dir, "index.md")
+        return index.parent if index is not None else bundle_dir
+
+    async def run(self, bundle_dir: Path) -> ImportSummary:
+        """Restore a bundle directory; never aborts on a single bad file (spec section 7)."""
+        summary = ImportSummary()
+        manifest_path = self._find(bundle_dir, "saga-manifest.json")
+        root = self._bundle_root(bundle_dir, manifest_path)
+
+        if manifest_path is not None:
+            manifest = self._load_manifest(bundle_dir) or {}
+            (
+                doctype_ids,
+                summary.doc_types_created,
+                summary.doc_types_reused,
+            ) = await self._restore_doc_types(manifest.get("doc_types", []))
+            (
+                folder_map,
+                summary.folders_created,
+                summary.folders_reused,
+            ) = await self._restore_folders(manifest.get("folders", []))
+            for concept in self._concept_files(root):
+                try:
+                    result = await self._restore_document(
+                        concept, doctype_ids=doctype_ids, folder_map=folder_map
+                    )
+                    if result == "imported":
+                        summary.documents_imported += 1
+                    else:
+                        summary.documents_skipped += 1
+                except Exception as exc:
+                    summary.documents_failed += 1
+                    summary.errors.append(f"{concept.name}: {exc}")
+                    _log.warning("okf_import_document_failed", concept=concept.name, error=str(exc))
+            try:
+                summary.events_restored, summary.events_skipped = await self._restore_events(
+                    self._load_events(bundle_dir), folder_map
+                )
+            except Exception as exc:
+                summary.errors.append(f"events: {exc}")
+                _log.warning("okf_import_events_failed", error=str(exc))
+        else:
+            dir_to_id = await self._restore_foreign_folders(root)
+            summary.folders_created = len(dir_to_id)
+            for concept in self._concept_files(root):
+                try:
+                    await self._reenrich_concept(concept, dir_to_id)
+                    summary.documents_imported += 1
+                except Exception as exc:
+                    summary.documents_failed += 1
+                    summary.errors.append(f"{concept.name}: {exc}")
+                    _log.warning("okf_import_reenrich_failed", concept=concept.name, error=str(exc))
+        return summary
+
     # --- documents ---------------------------------------------------------- #
 
     def _read_original(self, concept_path: Path, fm: dict[str, Any], saga_id: str) -> bytes | None:

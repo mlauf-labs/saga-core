@@ -329,3 +329,80 @@ async def test_restore_foreign_folders_idempotent(tmp_path: Path, store: Postgre
 
     assert first == second
     assert len(await store.list_folders()) == 1
+
+
+async def test_run_faithful_collects_summary_and_is_robust(
+    tmp_path: Path, store: PostgresStore
+) -> None:
+    importer = _importer(store)
+    root = tmp_path / "okf-saga-1"
+    root.mkdir()
+    (root / "index.md").write_text("# Index\n", encoding="utf-8")
+    (root / "saga-manifest.json").write_text(
+        json.dumps(
+            {
+                "version": "1",
+                "store": "saga",
+                "folders": [
+                    {
+                        "id": "f-src",
+                        "name": "Finanzen",
+                        "parent_id": None,
+                        "description": "Money",
+                        "emoji": "💰",
+                        "metadata": {},
+                    }
+                ],
+                "doc_types": [
+                    {"id": "dt", "name": "invoice", "description": "A bill.", "emoji": "📄"}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "Rechnung-ACME__doc-1.md").write_text(_concept_text("f-src"), encoding="utf-8")
+    # A malformed concept must not abort the whole import.
+    (root / "broken__x.md").write_text("---\ntitle: no saga id\n---\n\nbody\n", encoding="utf-8")
+    now = datetime(2026, 5, 1, tzinfo=UTC)
+    ev = Event(
+        event_id="e1",
+        category=EventCategory.AUDIT,
+        event_type=EventType.FOLDER_CREATED,
+        folder_id="f-src",
+        recorded_at=now,
+        actor="system",
+        summary="created",
+    )
+    (root / "saga-events.jsonl").write_text(
+        json.dumps(ev.model_dump(mode="json")) + "\n", encoding="utf-8"
+    )
+
+    summary = await importer.run(tmp_path)
+
+    assert summary.documents_imported == 1
+    assert summary.documents_failed == 1  # broken__x.md (no saga_id)
+    assert summary.folders_created == 1
+    assert summary.doc_types_created == 1
+    assert summary.events_restored == 1
+    assert any("broken__x.md" in e for e in summary.errors)
+    assert await store.get_document("doc-1") is not None
+
+
+async def test_run_foreign_routes_to_reenrich(tmp_path: Path, store: PostgresStore) -> None:
+    queue = FakeQueue()
+    importer = OkfBundleImporter(
+        db=store, minio=InMemoryBinaryStore(), queue=queue, config=AppConfig()
+    )
+    root = tmp_path / "okf-foreign"
+    (root / "Taxes").mkdir(parents=True)
+    (root / "index.md").write_text("# Index\n", encoding="utf-8")
+    (root / "Taxes" / "index.md").write_text("# Taxes\n", encoding="utf-8")
+    (root / "Taxes" / "note.md").write_text(
+        "---\ntype: invoice\ntitle: Bill\n---\n\n# Hello\n", encoding="utf-8"
+    )
+
+    summary = await importer.run(tmp_path)
+
+    assert summary.documents_imported == 1
+    assert summary.folders_created == 1
+    assert any(job == INGEST_JOB for job, _ in queue.jobs)
