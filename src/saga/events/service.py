@@ -134,7 +134,9 @@ class TimelineService:
             window_end=window_end,
             max_occurrences=self._max_occurrences,
         )
-        # Non-recurring events within the window (drop any bare RECURRING rows).
+        # Non-recurring events within the window. The caller's ``event_types`` filter is
+        # honoured here; any bare RECURRING rows are dropped below (the agenda comes from
+        # the expanded occurrences, not the rule rows).
         others = await self._fetch_all(
             categories=q.categories,
             event_types=q.event_types,
