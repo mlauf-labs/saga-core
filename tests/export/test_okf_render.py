@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 import yaml
 
 from saga.core.models import (
-    Document,
     DocType,
+    Document,
     Event,
     EventCategory,
     EventType,
@@ -169,7 +169,9 @@ def test_render_manifest_maps_folders_and_doc_types() -> None:
         )
     ]
 
-    manifest = json.loads(render_manifest("saga", folders, doc_types))
+    rendered = render_manifest("saga", folders, doc_types)
+    assert rendered.endswith("\n")  # trailing newline is part of the contract
+    manifest = json.loads(rendered)
 
     assert manifest["version"] == "1"
     assert manifest["store"] == "saga"

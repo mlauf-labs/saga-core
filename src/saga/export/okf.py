@@ -22,7 +22,7 @@ from saga.events import EventQuery
 from saga.scripts.layout import backup_basename, sanitize_component
 
 if TYPE_CHECKING:
-    from saga.core.models import Document, DocType, Event, Folder
+    from saga.core.models import DocType, Document, Event, Folder
 
 _log = get_logger("saga.export")
 
@@ -94,9 +94,7 @@ def _frontmatter(
     return fm
 
 
-def render_manifest(
-    store_name: str, folders: list[Folder], doc_types: list[DocType]
-) -> str:
+def render_manifest(store_name: str, folders: list[Folder], doc_types: list[DocType]) -> str:
     """Render the machine-readable ``saga-manifest.json`` (folders + doc-types).
 
     OKF consumers ignore non-markdown files; the SAGA import uses this for the exact
