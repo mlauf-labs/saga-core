@@ -122,3 +122,14 @@ attributes, constraints, and engineering standards.
   interfaces so providers can be swapped via config.
 - **NFR-35 Reproducibility** — Pinned lockfile + pinned image tags ensure
   reproducible builds; `docker compose up` works from a clean checkout + `.env`.
+
+---
+
+## 9. Interoperability (OKF)
+
+- **NFR-36 OKF conformance & deterministic bundles** — Exported bundles conform to
+  **Open Knowledge Format v0.1** (parseable YAML frontmatter, non-empty `type`,
+  `index.md`/`log.md` in their reserved roles) and are **deterministic** (stable file
+  ordering and zeroed mtimes) so they are byte-stable and git-diffable. SAGA-specific
+  data lives in namespaced `saga_*` keys and OKF-ignored sidecar files, so a SAGA
+  bundle remains a valid OKF bundle for foreign consumers.
