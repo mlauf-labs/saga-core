@@ -23,3 +23,19 @@ def test_timeline_config_defaults_present() -> None:
 def test_timeline_content_min_confidence_default() -> None:
     cfg = load_config()
     assert cfg.timeline.content_min_confidence == 0.5
+
+
+def test_timeline_config_recurrence_defaults() -> None:
+    from saga.core.config import TimelineConfig
+
+    cfg = TimelineConfig()
+    assert cfg.recurrence_horizon_days == 366
+    assert cfg.max_occurrences_per_rule == 366
+
+
+def test_timeline_config_overrides() -> None:
+    from saga.core.config import TimelineConfig
+
+    cfg = TimelineConfig(recurrence_horizon_days=90, max_occurrences_per_rule=50)
+    assert cfg.recurrence_horizon_days == 90
+    assert cfg.max_occurrences_per_rule == 50

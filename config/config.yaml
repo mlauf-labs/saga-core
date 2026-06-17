@@ -99,6 +99,10 @@ timeline:
   max_page_size: 500
   # Minimum confidence for an extracted content/timeline event to be kept.
   content_min_confidence: 0.5
+  # Default horizon (days) for recurrence expansion / the agenda view.
+  recurrence_horizon_days: 366
+  # Per-rule cap on expanded occurrences (guards against pathological RRULEs).
+  max_occurrences_per_rule: 366
 
 export:
   # Public base URL for resolvable OKF `resource` links; null → saga:// fallback.
