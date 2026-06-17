@@ -3,9 +3,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from saga.core.errors import NotFoundError
 from saga.core.models import Chunk, Document, DocumentStatus
 from saga.pipeline.tasks import index_document
 from saga.storage.postgres import PostgresStore
@@ -80,3 +82,14 @@ async def test_index_document_projects_and_chunks_without_llm(store: PostgresSto
 
     assert "d1" in projection.projected
     assert projection.chunks["d1"] == 2
+
+
+async def test_index_document_raises_for_missing_document(store: PostgresStore) -> None:
+    ctx: dict[str, Any] = {
+        "db": store,
+        "opensearch": _Projection(),
+        "embedder": FakeEmbedder(),
+        "chunker": _Chunker(),
+    }
+    with pytest.raises(NotFoundError):
+        await index_document(ctx, "missing")
