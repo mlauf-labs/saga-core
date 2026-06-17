@@ -30,6 +30,7 @@ from saga.llm.schemas import (
     FolderDecision,
     FolderPlacement,
     Summary,
+    TimelineExtraction,
     ValueExtraction,
 )
 
@@ -475,3 +476,20 @@ class DocumentAnalyzer:
         if result is None:
             return dict.fromkeys(fields)
         return {k: getattr(result, k, None) for k in fields}
+
+    async def extract_timeline(
+        self, *, content: str, trace_callbacks: list[Any] | None = None
+    ) -> TimelineExtraction | None:
+        """Extract dated events / appointments / recurring obligations (FR-18, Phase 2).
+
+        Uses JSON mode (more reliable for the nested list, like ``extract_values``).
+        """
+        system = self._prompts.render("analysis/timeline-extraction.md")
+        return await self._extract(
+            step="timeline_extraction",
+            schema=TimelineExtraction,
+            system_prompt=system,
+            text=self._truncate(content),
+            mode=ExtractionMode.JSON,
+            trace_callbacks=trace_callbacks,
+        )

@@ -23,6 +23,8 @@ from saga.llm.schemas import (
     ExtractedValueOut,
     FolderPlacement,
     Summary,
+    TimelineEventOut,
+    TimelineExtraction,
     ValueExtraction,
 )
 
@@ -298,3 +300,28 @@ async def test_extract_uses_global_fallback_for_non_overridden_steps(
     )
     await analyzer.summarize(filename="f.pdf", content="body")
     assert recorder.calls[0]["fallback"] is global_fallback
+
+
+# ---------------------------------------------------------------------------
+# extract_timeline (FR-18, Phase 2)
+# ---------------------------------------------------------------------------
+
+
+async def test_extract_timeline_returns_extraction(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = _patch(
+        monkeypatch,
+        {"TimelineExtraction": TimelineExtraction(
+            events=[TimelineEventOut(kind="future", description="Policy expiry",
+                                     date="2027-04-30", confidence=0.9)]
+        )},
+    )
+    result = await _analyzer().extract_timeline(content="...expires 2027-04-30...")
+    assert result is not None
+    assert result.events[0].kind == "future"
+    assert recorder.calls[0]["schema"] == "TimelineExtraction"
+
+
+async def test_extract_timeline_uses_json_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = _patch(monkeypatch, {"TimelineExtraction": TimelineExtraction()})
+    await _analyzer().extract_timeline(content="x")
+    assert recorder.calls[0]["mode"] == ExtractionMode.JSON
