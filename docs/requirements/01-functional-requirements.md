@@ -223,6 +223,71 @@ After conversion, every document is analysed by an LLM. All prompts live as
 
 ---
 
+## 7b. Timeline & event log
+
+- **FR-44 Tagged event store** — A single Postgres `events` table records timeline
+  events with a `category` discriminator (`audit` | `content`), an `event_type`, a
+  `document_id` and/or `folder_id`, `occurred_at` (real-world/event time) and
+  `recorded_at` (archive time), an `actor`, a `summary`, and a `details` JSON blob.
+  One `TimelineService` read path serves all consumers.
+- **FR-45 Audit stream with rationale** — Lifecycle decisions are emitted as `audit`
+  events: ingestion start, doc-type (re)classification, folder placement and moves,
+  folder creation/rename. Automatic placement records **why** (the similar documents
+  and folder votes that drove it), making self-organisation explainable. Emission is
+  best-effort and never blocks ingestion.
+- **FR-46 Content/timeline extraction** — An LLM step extracts real-world dates,
+  appointments/deadlines, and recurring obligations from the document text
+  (`kind` = past/future/recurring, with `date`, optional `end_date`, optional
+  `recurrence` RRULE, `source_quote`, `confidence`). These persist as `content`
+  events; they are a **derivable projection** — replaced (delete + reinsert) on
+  re-analysis. A configurable confidence threshold filters low-quality hits.
+- **FR-47 Recurrence on-read expansion** — A recurring rule is stored once (the RRULE
+  in `details`), never materialised. Future occurrences are expanded **on read**
+  within a configurable horizon, bounded by an `end_date` and a per-rule safety cap.
+  Expanded occurrences are synthetic (not persisted) and back-reference the rule.
+- **FR-48 Timeline read surface (REST + MCP)** — `GET /timeline` and
+  `GET /documents/{id}/timeline` (filterable by `category`, type, folder-subtree, and
+  time window) plus the MCP `get_timeline` tool expose the read path.
+- **FR-49 Agenda / upcoming view** — `GET /agenda` and the MCP `get_agenda` tool return
+  upcoming content events (appointments, deadlines, and expanded recurring
+  occurrences) within the horizon, sorted ascending by real-world date. `GET /timeline`
+  also accepts an `expand` flag.
+- **FR-50 RRULE validation at extraction** — Recurrence patterns are validated as
+  RFC 5545 RRULEs during extraction (a Pydantic field validator); invalid patterns are
+  fed back to the LLM for self-correction (FR-18), so only valid rules are persisted.
+
+---
+
+## 7c. OKF interchange (export / import / round-trip)
+
+- **FR-51 OKF export bundle** — `GET /export/okf` (plus a thin `saga-export-okf` client)
+  streams the archive as an Open Knowledge Format `.tar.gz`: one concept file per
+  document (YAML frontmatter + Markdown body + optional Notes), a per-folder reserved
+  `index.md` (folder overview) and `log.md` (date-grouped, category-tagged change log
+  fed by FR-44), and a root `index.md`. SAGA-specific metadata uses namespaced
+  `saga_*` extension keys; `type` falls back to `document` when no doc-type is set.
+- **FR-52 Originals option** — `--with-originals` colocates each document's original
+  binary next to its concept file; the default is a pure-Markdown bundle.
+- **FR-53 Machine-readable manifest** — The bundle also carries `saga-manifest.json`
+  (folder tree + doc-type definitions with source ids) and `saga-events.jsonl` (every
+  event verbatim). OKF consumers ignore these non-Markdown files; the SAGA import uses
+  them for exact restore.
+- **FR-54 OKF import — faithful restore** — `POST /import/okf` (plus a thin
+  `saga-import-okf` client) restores a SAGA bundle into the same state: documents
+  (preserving `document_id`, content, notes, doc-type, status), the folder tree and
+  memberships, doc-types, and events (preserving `event_id`, folder ids remapped). It
+  is idempotent (re-importing creates no duplicates) and re-indexes each document via a
+  non-LLM `index_document` job so restored content events are not overwritten.
+- **FR-55 Foreign-bundle re-enrich** — A bundle without `saga-manifest.json` (a foreign
+  OKF bundle) is imported permissively: folders are rebuilt from the directory tree and
+  each concept is re-enriched through the normal ingestion pipeline, seeded with its
+  OKF `title`/`type`/`description`.
+- **FR-56 Round-trip fidelity** — Exporting an archive and importing it into a fresh
+  instance reproduces the same state (documents, metadata, content, notes, doc-type
+  assignment, folder tree, memberships, and events), verified by a round-trip test.
+
+---
+
 ## 8. Configuration
 
 - **FR-32 YAML configuration** — Converter routing, chunking limits, LLM/embedding
