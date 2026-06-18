@@ -5,8 +5,12 @@ from saga.core.models import Document
 
 def _doc(**kw: object) -> Document:
     base: dict[str, object] = {
-        "document_id": "d1", "title": "t", "mime_type": "text/plain", "size_bytes": 1,
-        "content_hash": "h", "minio_object": "o",
+        "document_id": "d1",
+        "title": "t",
+        "mime_type": "text/plain",
+        "size_bytes": 1,
+        "content_hash": "h",
+        "minio_object": "o",
         "created_at": datetime(2026, 1, 1, tzinfo=UTC),
         "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
     }

@@ -21,8 +21,8 @@ def test_metadata_from_frontmatter_keeps_only_unreserved_keys_as_strings() -> No
         "title": "X",
         "saga_id": "d1",
         "project": "Apollo",
-        "priority": 3,          # coerced to str
-        "approved": True,       # coerced to str
+        "priority": 3,  # coerced to str
+        "approved": True,  # coerced to str
     }
     assert metadata_from_frontmatter(fm) == {
         "project": "Apollo",
