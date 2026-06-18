@@ -116,7 +116,11 @@ class TimelineService:
     ) -> list[Event]:
         now = datetime.now(UTC)
         window_start = q.occurred_from or now
-        window_end = q.occurred_to or (now + timedelta(days=self._horizon_days))
+        # Recurrence expansion MUST be bounded above — a rule yields unbounded occurrences,
+        # so the horizon caps how far we materialise them. Concrete (non-recurring) events
+        # are finite and real, so they are NOT horizon-capped: a genuine appointment years
+        # out still belongs on the agenda. Both honour an explicit ``to`` when given.
+        expand_end = q.occurred_to or (now + timedelta(days=self._horizon_days))
         # Recurring rules: fetch ALL in scope (no lower time bound — a rule's anchor
         # often precedes the window while its occurrences fall inside it).
         rules = await self._fetch_all(
@@ -131,12 +135,13 @@ class TimelineService:
         occurrences = expand_recurrences(
             rules,
             window_start=window_start,
-            window_end=window_end,
+            window_end=expand_end,
             max_occurrences=self._max_occurrences,
         )
-        # Non-recurring events within the window. The caller's ``event_types`` filter is
-        # honoured here; any bare RECURRING rows are dropped below (the agenda comes from
-        # the expanded occurrences, not the rule rows).
+        # Non-recurring events from window_start onward. Upper-bounded only when the caller
+        # explicitly passes ``to`` (``q.occurred_to``); otherwise unbounded so far-future
+        # concrete events still surface. The caller's ``event_types`` filter is honoured;
+        # any bare RECURRING rows are dropped below (the agenda uses expanded occurrences).
         others = await self._fetch_all(
             categories=q.categories,
             event_types=q.event_types,
@@ -144,7 +149,7 @@ class TimelineService:
             folder_ids=folder_ids,
             document_ids=document_ids,
             occurred_from=window_start,
-            occurred_to=window_end,
+            occurred_to=q.occurred_to,
         )
         others = [e for e in others if e.event_type != EventType.RECURRING]
         merged = sorted(
