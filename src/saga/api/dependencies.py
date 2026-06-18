@@ -13,12 +13,14 @@ from saga.core.errors import SagaError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from datetime import datetime
 
     from saga.core.config import AppConfig
     from saga.core.models import (
         DocType,
         Document,
         DocumentStatus,
+        Event,
         ExtractedValue,
         Folder,
         FolderNode,
@@ -136,6 +138,22 @@ class Database(Protocol):
     ) -> list[FolderRef]: ...
     async def remove_document_folder(self, document_id: str, folder_id: str) -> list[FolderRef]: ...
     async def set_primary_folder(self, document_id: str, folder_id: str) -> list[FolderRef]: ...
+    # event mutations (EventMutationStore + EventSink)
+    async def append_event(self, event: Event) -> bool: ...
+    async def get_event(self, event_id: str) -> Event | None: ...
+    async def delete_event(self, event_id: str) -> bool: ...
+    async def update_event(
+        self,
+        event_id: str,
+        *,
+        summary: str | None = ...,
+        occurred_at: datetime | None = ...,
+        confidence: float | None = ...,
+        details: dict[str, Any] | None = ...,
+    ) -> Event | None: ...
+    async def merge_events(
+        self, canonical_id: str, duplicate_ids: Sequence[str]
+    ) -> Event | None: ...
 
 
 class ProjectionStore(Protocol):

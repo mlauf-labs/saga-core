@@ -16,10 +16,10 @@ from pydantic import Field
 
 from saga.api import service
 from saga.api.schemas import DocumentPatch
-from saga.core.errors import ValidationError
+from saga.core.errors import NotFoundError, ValidationError
 from saga.core.logging import get_logger
 from saga.core.models import EventCategory, ExtractedValue
-from saga.events import EventQuery
+from saga.events import EventQuery, mutations
 from saga.llm.prompts import PromptLibrary
 
 if TYPE_CHECKING:
@@ -506,6 +506,53 @@ def build_server(
         await service.delete_folder_note(services, note_id)
         return {"status": "deleted", "note_id": note_id}
 
+    async def merge_events(
+        canonical_event_id: Annotated[str, Field(description="Event id to keep.")],
+        duplicate_event_ids: Annotated[
+            list[str], Field(description="Event ids to fold in and delete.")
+        ],
+    ) -> dict[str, Any]:
+        try:
+            event = await mutations.merge_events(
+                services.db, services.db, canonical_event_id, duplicate_event_ids
+            )
+        except ValidationError as exc:
+            return {"error": str(exc)}
+        except NotFoundError as exc:
+            return {"error": str(exc)}
+        return event.model_dump(mode="json")
+
+    async def delete_event(
+        event_id: Annotated[str, Field(description="The event id to delete.")],
+    ) -> dict[str, str]:
+        try:
+            await mutations.delete_event(services.db, services.db, event_id)
+        except NotFoundError as exc:
+            return {"error": str(exc)}
+        return {"status": "deleted", "event_id": event_id}
+
+    async def update_event(
+        event_id: Annotated[str, Field(description="The event id to update.")],
+        summary: Annotated[str | None, Field(description="New summary.")] = None,
+        occurred_at: Annotated[str | None, Field(description="New ISO 8601 event time.")] = None,
+        confidence: Annotated[float | None, Field(description="New confidence 0-1.")] = None,
+    ) -> dict[str, Any]:
+        from datetime import datetime
+
+        occ = datetime.fromisoformat(occurred_at) if occurred_at else None
+        try:
+            event = await mutations.update_event(
+                services.db,
+                services.db,
+                event_id,
+                summary=summary,
+                occurred_at=occ,
+                confidence=confidence,
+            )
+        except NotFoundError as exc:
+            return {"error": str(exc)}
+        return event.model_dump(mode="json")
+
     tools: list[Callable[..., Any]] = [
         hybrid_search,
         search_documents,
@@ -533,6 +580,9 @@ def build_server(
         add_folder_note,
         update_folder_note,
         delete_folder_note,
+        merge_events,
+        delete_event,
+        update_event,
     ]
     for tool in tools:
         mcp.add_tool(tool, name=tool.__name__, description=_description(library, tool.__name__))
