@@ -7,6 +7,17 @@ generated from the commit history (see `cliff.toml` and the release workflow).
 ## [Unreleased]
 
 ### Features
+- **timeline**: a tagged event log with two categories — **audit** (placement,
+  reclassification: what the pipeline did and why) and **content** (dated facts extracted
+  from documents: past, future, and recurring). Read via `GET /timeline`,
+  `GET /documents/{id}/timeline`, the upcoming-view `GET /agenda`, and the `get_timeline` /
+  `get_agenda` MCP tools. Recurring obligations are stored once as a rule and expanded on
+  read within a bounded horizon (FR-44…FR-50).
+- **okf**: **Open Knowledge Format** interchange. `GET /export/okf` projects the archive as a
+  `.tar.gz` bundle (concept files + reserved `index.md`/`log.md`, optional originals via
+  `with_originals`, plus machine-readable `saga-manifest.json` / `saga-events.jsonl` for a
+  faithful round-trip); `POST /import/okf` restores a SAGA bundle verbatim (stable ids) and
+  re-enriches a foreign OKF bundle through the pipeline (FR-51…FR-56, NFR-36).
 - **mcp**: every MCP tool parameter now carries a description in the generated input
   schema (via `Annotated[..., Field(description=...)]`), so agents get per-argument
   guidance in addition to the tool-level description.
