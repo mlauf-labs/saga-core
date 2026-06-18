@@ -28,9 +28,11 @@ How to choose:
 2. If none fits, coin a concise new lowercase `snake_case` `doc_type`, set `is_new` to
    true, and provide a one-sentence `description` (written in **{{ output_language }}**)
    explaining when this type should be used.
-   Also provide a single `emoji` that visually represents the type (e.g. `📄` for
-   invoice, `📅` for meeting_notes, `📝` for contract, `🏦` for bank_statement).
-   The emoji is purely for display; it is **not** part of the doc-type name.
+
+**Always** provide a single `emoji` that visually represents the type (e.g. `📄` for
+invoice, `📅` for meeting_notes, `📝` for contract, `🏦` for bank_statement). Return
+exactly one emoji character in every response. The emoji is purely for display; it is
+**not** part of the doc-type name.
 3. Base the decision on content, not on layout alone. Give a short `rationale` in
    **{{ output_language }}**.
 

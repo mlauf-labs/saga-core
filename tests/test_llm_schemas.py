@@ -23,21 +23,27 @@ from saga.llm.schemas import (
 
 
 def test_doc_type_assignment_defaults() -> None:
-    assignment = DocTypeAssignment(doc_type="invoice")
+    assignment = DocTypeAssignment(doc_type="invoice", emoji="📄")
     assert assignment.doc_type == "invoice"
     assert assignment.is_new is False
     assert assignment.description is None
+    assert assignment.emoji == "📄"
     assert assignment.rationale == ""
 
 
 def test_doc_type_assignment_requires_doc_type() -> None:
     with pytest.raises(ValidationError):
-        DocTypeAssignment()  # type: ignore[call-arg]
+        DocTypeAssignment(emoji="📄")  # type: ignore[call-arg]
+
+
+def test_doc_type_assignment_requires_emoji() -> None:
+    with pytest.raises(ValidationError):
+        DocTypeAssignment(doc_type="invoice")  # type: ignore[call-arg]
 
 
 def test_doc_type_assignment_strips_whitespace_and_ignores_extra() -> None:
     assignment = DocTypeAssignment.model_validate(
-        {"doc_type": "  contract  ", "is_new": True, "unexpected": "drop me"}
+        {"doc_type": "  contract  ", "is_new": True, "emoji": "📝", "unexpected": "drop me"}
     )
     assert assignment.doc_type == "contract"
     assert assignment.is_new is True
