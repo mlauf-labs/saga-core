@@ -19,6 +19,7 @@ import yaml
 from saga.core.logging import get_logger
 from saga.core.models import EventCategory
 from saga.events import EventQuery
+from saga.okf_keys import is_reserved_key
 from saga.scripts.layout import backup_basename, sanitize_component
 
 if TYPE_CHECKING:
@@ -92,6 +93,11 @@ def _frontmatter(
         }
         for n in document.notes
     ]
+    # Free-form document metadata is emitted as top-level keys (visible to any OKF consumer),
+    # but never allowed to shadow a reserved/saga_ key. See saga.okf_keys.
+    for key, value in document.metadata.items():
+        if not is_reserved_key(key) and key not in fm:
+            fm[key] = value
     return fm
 
 
