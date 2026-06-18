@@ -262,6 +262,9 @@ def build_server(
             "items": [e.model_dump(mode="json") for e in events],
             "limit": query.limit,
             "offset": query.offset,
+            "documents": await services.db.get_document_titles(
+                list({e.document_id for e in events if e.document_id})
+            ),
         }
 
     async def get_agenda(
@@ -288,6 +291,9 @@ def build_server(
             "items": [e.model_dump(mode="json") for e in events],
             "limit": query.limit,
             "offset": query.offset,
+            "documents": await services.db.get_document_titles(
+                list({e.document_id for e in events if e.document_id})
+            ),
         }
 
     # --------------------------- write tools ------------------------------- #

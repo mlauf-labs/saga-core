@@ -239,3 +239,4 @@ class TimelineResponse(BaseModel):
     items: list[Event]
     limit: int
     offset: int
+    documents: dict[str, str] = Field(default_factory=dict)

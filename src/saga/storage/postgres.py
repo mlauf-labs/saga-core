@@ -695,6 +695,20 @@ class PostgresStore:
                 return None
             return await self._load_document(session, row)
 
+    async def get_document_titles(self, document_ids: list[str]) -> dict[str, str]:
+        """Return {document_id: title} for the given ids (missing ids are omitted)."""
+        if not document_ids:
+            return {}
+        async with self._sessions()() as session:
+            rows = (
+                await session.execute(
+                    select(DocumentRow.id, DocumentRow.title).where(
+                        DocumentRow.id.in_(document_ids)
+                    )
+                )
+            ).all()
+            return {row[0]: row[1] for row in rows}
+
     async def find_by_hash(self, content_hash: str) -> Document | None:
         async with self._sessions()() as session:
             row = (
