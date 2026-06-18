@@ -11,7 +11,7 @@ from saga.core.logging import get_logger
 _log = get_logger("saga.pipeline.signals")
 
 
-async def publish_signal(redis: Any, channel: str, topic: str, **fields: Any) -> None:
+async def publish_signal(redis: Any, channel: str, topic: str, **fields: Any) -> None:  # noqa: ANN401
     """Publish a JSON signal to a Redis channel.
 
     Best-effort: any exception is logged and swallowed so that a signalling
