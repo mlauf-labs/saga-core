@@ -14,6 +14,7 @@ import pytest
 
 from saga.core.errors import NotFoundError
 from saga.core.models import DocumentStatus, Event, EventCategory, EventType, ExtractedValue
+from saga.events import EventRecorder
 from saga.llm.schemas import (
     DocTypeAssignment,
     ExtractedValueOut,
@@ -597,3 +598,96 @@ async def test_extract_timeline_continues_on_persist_error() -> None:
         min_confidence=0.5,
     )
     assert count == 0
+
+
+# --------------------------------------------------------------------------- #
+# Audit-event emission guards (re-ingest must not append duplicate events)      #
+# --------------------------------------------------------------------------- #
+
+
+class _RecordingSink:
+    """Captures the audit events a stage emits, so a test can assert on/absence."""
+
+    def __init__(self) -> None:
+        self.events: list[Event] = []
+
+    async def append_event(self, event: Event) -> bool:
+        self.events.append(event)
+        return True
+
+
+async def test_classify_doc_type_emits_reclassification_only_on_change(
+    db: PostgresStore,
+) -> None:
+    doc = await seed_document(db)
+    await db.ensure_doc_type(name="invoice", description="a bill")
+    analyzer = _FakeAnalyzer(doc_type=DocTypeAssignment(doc_type="invoice"))
+    sink = _RecordingSink()
+    recorder = EventRecorder(sink)
+
+    # Re-classifying to the SAME doc-type (idempotent re-ingest) must emit nothing.
+    await classify_doc_type(
+        document_id=doc.document_id,
+        title="inv.pdf",
+        markdown="# md",
+        db=db,
+        analyzer=analyzer,  # type: ignore[arg-type]
+        allow_auto_create=True,
+        previous_doc_type="invoice",
+        events=recorder,
+    )
+    assert sink.events == []
+
+    # A genuine change (receipt -> invoice) records exactly one reclassification.
+    await classify_doc_type(
+        document_id=doc.document_id,
+        title="inv.pdf",
+        markdown="# md",
+        db=db,
+        analyzer=analyzer,  # type: ignore[arg-type]
+        allow_auto_create=True,
+        previous_doc_type="receipt",
+        events=recorder,
+    )
+    assert [e.event_type for e in sink.events] == [EventType.RECLASSIFICATION]
+    assert sink.events[0].details == {"from_doc_type": "receipt", "to_doc_type": "invoice"}
+
+
+async def test_place_in_folder_emits_placement_only_when_folder_set_changes(
+    db: PostgresStore,
+) -> None:
+    doc = await seed_document(db)
+    folder = await db.create_folder(name="Finance", description="money")
+    analyzer = _FakeAnalyzer(
+        placement=FolderPlacement(assignments=[folder.folder_id], primary=folder.folder_id)
+    )
+    sink = _RecordingSink()
+    recorder = EventRecorder(sink)
+
+    # First placement into Finance records one placement event.
+    await place_in_folder(
+        document_id=doc.document_id,
+        summary="A finance document.",
+        doc_type="invoice",
+        extracted_values=[],
+        votes=[],
+        db=db,
+        analyzer=analyzer,  # type: ignore[arg-type]
+        allow_auto_create=True,
+        events=recorder,
+    )
+    assert [e.event_type for e in sink.events] == [EventType.PLACEMENT]
+
+    # Re-ingesting into the identical folder set must NOT append a duplicate.
+    await place_in_folder(
+        document_id=doc.document_id,
+        summary="A finance document.",
+        doc_type="invoice",
+        extracted_values=[],
+        votes=[],
+        db=db,
+        analyzer=analyzer,  # type: ignore[arg-type]
+        allow_auto_create=True,
+        events=recorder,
+    )
+    assert [e.event_type for e in sink.events] == [EventType.PLACEMENT]
