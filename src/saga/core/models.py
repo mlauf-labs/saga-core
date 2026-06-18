@@ -52,6 +52,9 @@ class EventType(StrEnum):
     RECLASSIFICATION = "reclassification"
     FOLDER_CREATED = "folder_created"
     FOLDER_RENAMED = "folder_renamed"
+    DOCUMENT_DELETED = "document_deleted"
+    FOLDER_DELETED = "folder_deleted"
+    DOC_TYPE_DELETED = "doc_type_deleted"
     # content (Phase 2/3)
     DATED_FACT = "dated_fact"
     APPOINTMENT = "appointment"
