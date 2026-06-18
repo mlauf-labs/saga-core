@@ -90,7 +90,8 @@ round-trip are implemented, tested, merged to `develop`, **and surfaced in the U
       (`tests/export/test_okf_conformance.py`).
 - [ ] **External** consumption check — Google's static HTML graph visualizer and (aspirationally)
       the BigQuery Knowledge Catalog ingestion — on the test server (10.0.0.220). *Needs the
-      running stack + a human to drive the external tools; flagged for the owner.*
+      running stack + a human to drive the external tools; flagged for the owner.* A
+      step-by-step procedure now exists: **[OKF external conformance runbook](okf-external-conformance-runbook.md)**.
 - [ ] License/attribution for emitting OKF; track upstream spec changes (v0.1 is young).
 
 ### Deferred / smaller items (acceptable as-is for now)
