@@ -281,6 +281,13 @@ class MetricsConfig(BaseModel):
     prices: dict[str, ModelPrice] = Field(default_factory=dict)
 
 
+class EventsConfig(BaseModel):
+    """Optional Redis pub/sub announcements for external trigger consumers (saga-agents)."""
+
+    publish: bool = False
+    channel: str = "saga:events"
+
+
 class AppConfig(BaseModel):
     """Root application configuration assembled from the YAML files."""
 
@@ -301,6 +308,7 @@ class AppConfig(BaseModel):
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
     langfuse: LangfuseConfig = Field(default_factory=LangfuseConfig)
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
+    events: EventsConfig = Field(default_factory=EventsConfig)
 
 
 def _load_prompt_file(path: Path) -> str:
@@ -376,6 +384,7 @@ def load_config(config_dir: Path | str = "config") -> AppConfig:
         "generation",
         "langfuse",
         "metrics",
+        "events",
     ):
         if key in data:
             merged[key] = data[key]
