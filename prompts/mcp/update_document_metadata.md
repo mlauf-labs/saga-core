@@ -13,6 +13,8 @@ Parameters:
   doc-type. A document always has exactly one doc-type.
 - `extracted_values` (optional): full replacement list, each
   `{ "key", "type", "value", "normalized"?, "confidence"? }`.
+- `metadata` (optional): full replacement free-form metadata map of string values, e.g.
+  `{ "project": "Apollo" }`. Keys must not be reserved/OKF-standard or `saga_`-prefixed.
 
 To change folder membership use the folder-assignment tools, not this tool. Returns the
 updated document record.

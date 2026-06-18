@@ -195,6 +195,30 @@ async def test_update_document_metadata_sets_summary_and_doc_type(services: Serv
     assert updated["doc_type"] == "invoice"
 
 
+async def test_update_document_metadata_sets_metadata(services: Services) -> None:
+    doc = await _seed_document(services, title="invoice.pdf", content="x")
+    mcp = build_server(services.config, services)
+    updated = _structured(
+        await mcp.call_tool(
+            "update_document_metadata",
+            {"document_id": doc.document_id, "metadata": {"project": "Apollo"}},
+        )
+    )
+    assert updated["metadata"] == {"project": "Apollo"}
+
+
+async def test_update_document_metadata_reserved_key_returns_error(services: Services) -> None:
+    doc = await _seed_document(services, title="invoice.pdf", content="x")
+    mcp = build_server(services.config, services)
+    result = _structured(
+        await mcp.call_tool(
+            "update_document_metadata",
+            {"document_id": doc.document_id, "metadata": {"saga_id": "x"}},
+        )
+    )
+    assert "error" in result
+
+
 async def test_document_note_lifecycle(services: Services) -> None:
     doc = await _seed_document(services, title="invoice.pdf", content="x")
     mcp = build_server(services.config, services)
