@@ -60,3 +60,51 @@ async def test_expand_false_returns_bare_rule(store: PostgresStore) -> None:
     query = EventQuery(categories=(EventCategory.CONTENT,), limit=100)
     events = await service.query(query)
     assert [e.event_id for e in events] == ["rule-1"]  # unchanged default behaviour
+
+
+async def _seed_far_future_appointment(store: PostgresStore) -> None:
+    # A concrete (non-recurring) event far beyond the recurrence horizon (~1 year).
+    await store.append_event(
+        Event(
+            event_id="appt-2050",
+            category=EventCategory.CONTENT,
+            event_type=EventType.APPOINTMENT,
+            document_id="d1",
+            occurred_at=datetime(2050, 6, 1, tzinfo=UTC),
+            recorded_at=datetime(2026, 6, 1, tzinfo=UTC),
+            actor="llm",
+            summary="Regelaltersrente beginnt",
+            details={},
+        )
+    )
+
+
+async def test_agenda_includes_far_future_concrete_event(store: PostgresStore) -> None:
+    await _seed_far_future_appointment(store)
+    service = TimelineService(store, recurrence_horizon_days=366, max_occurrences_per_rule=366)
+    # No explicit `to`: the recurrence horizon must NOT hide a real 2050 appointment.
+    query = EventQuery(
+        categories=(EventCategory.CONTENT,),
+        order_by="occurred_at",
+        descending=False,
+        expand_recurrences=True,
+        limit=100,
+    )
+    events = await service.query(query)
+    assert [e.event_id for e in events] == ["appt-2050"]
+
+
+async def test_agenda_respects_explicit_upper_bound(store: PostgresStore) -> None:
+    await _seed_far_future_appointment(store)
+    service = TimelineService(store, recurrence_horizon_days=366, max_occurrences_per_rule=366)
+    # When the caller passes an explicit `to` before the event, it is excluded.
+    query = EventQuery(
+        categories=(EventCategory.CONTENT,),
+        occurred_to=datetime(2030, 1, 1, tzinfo=UTC),
+        order_by="occurred_at",
+        descending=False,
+        expand_recurrences=True,
+        limit=100,
+    )
+    events = await service.query(query)
+    assert events == []
