@@ -28,6 +28,7 @@ from saga.llm.tracing import build_pipeline_tracer, noop_tracer
 from saga.metrics.pipeline import instrumented_stage, record_ingest_result
 from saga.metrics.registry import PIPELINE_DURATION
 from saga.pipeline.locks import folder_placement_lock
+from saga.pipeline.signals import publish_signal
 from saga.pipeline.stages import (
     classify_doc_type,
     compute_similarity,
@@ -50,6 +51,24 @@ if TYPE_CHECKING:
     from saga.storage import MinioStore, OpenSearchStore, PostgresStore
 
 _log = get_logger("saga.pipeline.tasks")
+
+
+async def _announce_ingested(
+    ctx: dict[str, Any],
+    config: "AppConfig",
+    document_id: str,
+) -> None:
+    """Publish document.ingested to Redis when events.publish is enabled.
+
+    Best-effort wrapper: both the publish flag check and the Redis lookup are
+    guarded so that missing infrastructure never breaks an ingestion run.
+    """
+    if config.events.publish:
+        redis = ctx.get("redis")
+        if redis is not None:
+            await publish_signal(
+                redis, config.events.channel, "document.ingested", document_id=document_id
+            )
 
 
 async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
@@ -259,6 +278,7 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
         with contextlib.suppress(Exception):
             PIPELINE_DURATION.observe(time.perf_counter() - _run_start)
             await record_ingest_result(ctx["redis"], "success")
+        await _announce_ingested(ctx, config, document_id)
         _log.info("ingest_complete", document_id=document_id)
     except SagaError as exc:
         await db.update_status(document_id, DocumentStatus.FAILED, error=str(exc))
