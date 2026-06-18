@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 
@@ -22,7 +23,7 @@ class FakeRedis:
 async def test_announce_ingested_publishes_when_enabled() -> None:
     redis = FakeRedis()
     config = AppConfig(events=EventsConfig(publish=True, channel="saga:events"))
-    ctx: dict = {"redis": redis}
+    ctx: dict[str, Any] = {"redis": redis}
     await _announce_ingested(ctx, config, "doc-abc")
     assert len(redis.published) == 1
     channel, message = redis.published[0]
@@ -37,7 +38,7 @@ async def test_announce_ingested_publishes_when_enabled() -> None:
 async def test_announce_ingested_does_nothing_when_publish_false() -> None:
     redis = FakeRedis()
     config = AppConfig(events=EventsConfig(publish=False))
-    ctx: dict = {"redis": redis}
+    ctx: dict[str, Any] = {"redis": redis}
     await _announce_ingested(ctx, config, "doc-xyz")
     assert redis.published == []
 
@@ -45,7 +46,7 @@ async def test_announce_ingested_does_nothing_when_publish_false() -> None:
 @pytest.mark.asyncio
 async def test_announce_ingested_does_nothing_when_redis_absent() -> None:
     config = AppConfig(events=EventsConfig(publish=True))
-    ctx: dict = {}  # no redis key
+    ctx: dict[str, Any] = {}  # no redis key
     # Must not raise
     await _announce_ingested(ctx, config, "doc-nored")
 
@@ -53,7 +54,7 @@ async def test_announce_ingested_does_nothing_when_redis_absent() -> None:
 @pytest.mark.asyncio
 async def test_announce_ingested_does_nothing_when_redis_is_none() -> None:
     config = AppConfig(events=EventsConfig(publish=True))
-    ctx: dict = {"redis": None}
+    ctx: dict[str, Any] = {"redis": None}
     await _announce_ingested(ctx, config, "doc-none")
     # No error, no publish
 
@@ -64,9 +65,9 @@ async def test_announce_ingested_swallows_exception_from_broken_config() -> None
 
     class BrokenConfig:
         @property
-        def events(self) -> None:  # type: ignore[override]
+        def events(self) -> None:
             raise RuntimeError("config exploded")
 
-    ctx: dict = {}
+    ctx: dict[str, Any] = {}
     # Must not raise even though accessing config.events raises
     await _announce_ingested(ctx, BrokenConfig(), "doc-broken")  # type: ignore[arg-type]
