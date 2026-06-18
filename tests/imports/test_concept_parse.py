@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from saga.core.models import Document, Note
 from saga.export.okf import render_concept, render_notes_suffix
 from saga.imports.okf import split_frontmatter, strip_notes_suffix
+from saga.okf_keys import metadata_from_frontmatter
 
 
 def _doc(**kw: object) -> Document:
@@ -58,3 +59,8 @@ def test_split_frontmatter_no_frontmatter_returns_empty() -> None:
     fm, body = split_frontmatter("just text, no fence")
     assert fm == {}
     assert body == "just text, no fence"
+
+
+def test_metadata_helper_drops_reserved_and_saga_keys() -> None:
+    fm = {"type": "invoice", "title": "X", "saga_id": "d1", "owner": "me", "rank": 2}
+    assert metadata_from_frontmatter(fm) == {"owner": "me", "rank": "2"}

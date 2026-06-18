@@ -10,6 +10,7 @@ from saga.storage.mappings import (
     build_filters,
     build_folder_filter,
     build_keyword_query_body,
+    build_metadata_text,
     build_more_like_this_body,
     build_semantic_query_body,
     build_summary_knn_body,
@@ -105,6 +106,25 @@ def test_build_value_terms_empty() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Metadata projection (nested + flattened text)                                 #
+# --------------------------------------------------------------------------- #
+
+
+def test_metadata_text_flattens_key_values() -> None:
+    assert build_metadata_text({"project": "Apollo", "rank": "1"}) == "project: Apollo\nrank: 1"
+    assert build_metadata_text({}) == ""
+
+
+def test_document_index_body_has_metadata_fields() -> None:
+    props = document_index_body(OpenSearchConfig())["mappings"]["properties"]
+    assert props["metadata"]["type"] == "nested"
+    assert props["metadata"]["properties"]["key"]["type"] == "keyword"
+    assert props["metadata"]["properties"]["value"]["type"] == "text"
+    assert props["metadata"]["properties"]["value"]["fields"]["keyword"]["type"] == "keyword"
+    assert props["metadata_text"]["type"] == "text"
+
+
+# --------------------------------------------------------------------------- #
 # Folder filter                                                                 #
 # --------------------------------------------------------------------------- #
 
@@ -186,6 +206,15 @@ def test_build_document_filters_nested_extracted_values() -> None:
     assert {"term": {"extracted_values.value.keyword": "123"}} in clauses
 
 
+def test_build_document_filters_emits_nested_metadata_term() -> None:
+    filters = build_document_filters(metadata={"project": "Apollo"})
+    nested = [f for f in filters if "nested" in f and f["nested"]["path"] == "metadata"]
+    assert nested, "expected a nested metadata filter"
+    must = nested[0]["nested"]["query"]["bool"]["filter"]
+    assert {"term": {"metadata.key": "project"}} in must
+    assert {"term": {"metadata.value.keyword": "Apollo"}} in must
+
+
 # --------------------------------------------------------------------------- #
 # Document search body                                                          #
 # --------------------------------------------------------------------------- #
@@ -208,6 +237,14 @@ def test_build_document_search_body_with_query() -> None:
 def test_build_document_search_body_empty_query_matches_all() -> None:
     body = build_document_search_body(query=None, filters=[], from_=0, size=5)
     assert body["query"]["bool"]["must"] == [{"match_all": {}}]
+
+
+def test_document_search_body_matches_metadata_values() -> None:
+    body = build_document_search_body(query="apollo", filters=[], from_=0, size=10)
+    should = body["query"]["bool"]["must"][0]["bool"]["should"]
+    assert any(c.get("nested", {}).get("path") == "metadata" for c in should), (
+        "expected a nested metadata.value match clause"
+    )
 
 
 # --------------------------------------------------------------------------- #

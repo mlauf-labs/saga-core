@@ -20,6 +20,7 @@ Optional filters narrow the search:
   `include_subtree=false` to match only that exact folder.
 - `title`, `status`, `created_from`/`created_to` (ISO dates), `top_k`.
 - `filters` (object): match extracted values, e.g. `{ "invoice_number": "12345" }`.
+- `metadata` (object): match free-form document metadata, e.g. `{ "project": "Apollo" }`.
 
 Returns `{ "results": [...] }`, each item with `document_id`, `title`, `score`,
 `doc_type`, `summary`, `folder_ids` and the best matching `snippet`. Use `get_document`

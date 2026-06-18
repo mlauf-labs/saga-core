@@ -53,6 +53,7 @@ class Database(Protocol):
         doc_type_id: str | None = ...,
         clear_doc_type: bool = ...,
         extracted_values: list[ExtractedValue] | None = ...,
+        metadata: dict[str, str] | None = ...,
     ) -> Document: ...
     async def get_summary_embedding(self, document_id: str) -> list[float] | None: ...
     async def list_documents_by_doc_type(
@@ -180,6 +181,7 @@ class SearchEngine(Protocol):
         created_from: str | None = ...,
         created_to: str | None = ...,
         filters: dict[str, str] | None = ...,
+        metadata: dict[str, str] | None = ...,
     ) -> HybridSearchResult: ...
 
     async def get_document(self, document_id: str) -> Document | None: ...
@@ -209,6 +211,7 @@ class SearchEngine(Protocol):
         title: str | None = ...,
         status: str | None = ...,
         filters: dict[str, str] | None = ...,
+        metadata: dict[str, str] | None = ...,
     ) -> tuple[list[Document], int]: ...
 
 

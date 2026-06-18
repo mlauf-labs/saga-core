@@ -132,6 +132,7 @@ class FakeSearch:
         title: str | None,
         status: str | None,
         filters: dict[str, str] | None,
+        metadata: dict[str, str] | None = None,
     ) -> list[Document]:
         if folder_id is not None:
             documents, _ = await self._db.list_documents_in_folder(
@@ -150,7 +151,7 @@ class FakeSearch:
             for key, value in (filters or {}).items():
                 if not any(v.key == key and v.value == value for v in doc.extracted_values):
                     return False
-            return True
+            return all(doc.metadata.get(key) == value for key, value in (metadata or {}).items())
 
         return [doc for doc in documents if keep(doc)]
 
@@ -168,6 +169,7 @@ class FakeSearch:
         created_from: str | None = None,
         created_to: str | None = None,
         filters: dict[str, str] | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> HybridSearchResult:
         keyword = (keyword_query or "").strip()
         semantic = (semantic_query or "").strip()
@@ -180,6 +182,7 @@ class FakeSearch:
             title=title,
             status=status,
             filters=filters,
+            metadata=metadata,
         )
         query = (keyword or semantic).lower()
         matched = [
@@ -215,6 +218,7 @@ class FakeSearch:
         title: str | None = None,
         status: str | None = None,
         filters: dict[str, str] | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> tuple[list[Document], int]:
         documents = await self._candidates(
             doc_type=doc_type,
@@ -223,6 +227,7 @@ class FakeSearch:
             title=title,
             status=status,
             filters=filters,
+            metadata=metadata,
         )
         if query:
             needle = query.lower()

@@ -121,7 +121,13 @@ class OpenSearchConfig(BaseModel):
     hybrid_combination: str = "arithmetic_mean"
     # Keyword (query_string) search over the document projection (FR-19/20).
     keyword_search_fields: list[str] = Field(
-        default_factory=lambda: ["title^3", "summary^2", "content_markdown", "doc_type"]
+        default_factory=lambda: [
+            "title^3",
+            "summary^2",
+            "content_markdown",
+            "doc_type",
+            "metadata_text",
+        ]
     )
     keyword_default_operator: str = "OR"
     # Reciprocal Rank Fusion constant for combining keyword + semantic rankings (FR-19).

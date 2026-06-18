@@ -25,6 +25,7 @@ from saga.core.models import (
 from saga.storage.mappings import (
     build_document_search_body,
     build_keyword_query_body,
+    build_metadata_text,
     build_more_like_this_body,
     build_semantic_query_body,
     build_summary_knn_body,
@@ -156,6 +157,8 @@ class OpenSearchStore:
             "folder_ancestor_ids": folder_ancestor_ids,
             "primary_folder_id": document.primary_folder_id,
             "value_terms": build_value_terms(document.extracted_values),
+            "metadata": [{"key": k, "value": v} for k, v in document.metadata.items()],
+            "metadata_text": build_metadata_text(document.metadata),
             "minio_object": document.minio_object,
             "content_hash": document.content_hash,
             "mime_type": document.mime_type,

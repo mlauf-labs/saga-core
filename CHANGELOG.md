@@ -7,6 +7,11 @@ generated from the commit history (see `cliff.toml` and the release workflow).
 ## [Unreleased]
 
 ### Features
+- **api/mcp/search**: documents carry a free-form, searchable `metadata` string map — edit via
+  `PATCH /documents/{id}` and the `update_document_metadata` MCP tool; full-text + exact filter
+  via `/documents/search` and `/search` (the `metadata` map). Round-trips through OKF as
+  top-level frontmatter, so foreign bundles import and re-export their extra keys losslessly
+  (FR-57).
 - **timeline**: a tagged event log with two categories — **audit** (placement,
   reclassification: what the pipeline did and why) and **content** (dated facts extracted
   from documents: past, future, and recurring). Read via `GET /timeline`,

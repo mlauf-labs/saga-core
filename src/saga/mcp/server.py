@@ -16,6 +16,7 @@ from pydantic import Field
 
 from saga.api import service
 from saga.api.schemas import DocumentPatch
+from saga.core.errors import ValidationError
 from saga.core.logging import get_logger
 from saga.core.models import EventCategory, ExtractedValue
 from saga.events import EventQuery
@@ -123,6 +124,10 @@ def build_server(
         filters: Annotated[
             dict[str, str] | None, Field(description="Match extracted values.")
         ] = None,
+        metadata: Annotated[
+            dict[str, str] | None,
+            Field(description="Match document metadata, e.g. {project: 'Apollo'}."),
+        ] = None,
     ) -> dict[str, Any]:
         result = await search.hybrid_search(
             keyword_query=keyword_query,
@@ -136,6 +141,7 @@ def build_server(
             created_from=created_from,
             created_to=created_to,
             filters=filters,
+            metadata=metadata,
         )
         return result.model_dump(mode="json")
 
@@ -151,6 +157,10 @@ def build_server(
         filters: Annotated[
             dict[str, str] | None, Field(description="Match extracted values.")
         ] = None,
+        metadata: Annotated[
+            dict[str, str] | None,
+            Field(description="Match document metadata, e.g. {project: 'Apollo'}."),
+        ] = None,
     ) -> dict[str, Any]:
         documents, total = await search.search_documents(
             query=query,
@@ -162,6 +172,7 @@ def build_server(
             title=title,
             status=status,
             filters=filters,
+            metadata=metadata,
         )
         return {
             "items": [_doc_summary(doc) for doc in documents],
@@ -293,6 +304,10 @@ def build_server(
             list[dict[str, Any]] | None,
             Field(description="Full replacement list of extracted values."),
         ] = None,
+        metadata: Annotated[
+            dict[str, str] | None,
+            Field(description="Full replacement metadata map (string values)."),
+        ] = None,
     ) -> dict[str, Any]:
         doc_type_id = await _resolve_doc_type_id(services, doc_type) if doc_type else None
         values = (
@@ -305,8 +320,12 @@ def build_server(
             summary=summary,
             doc_type_id=doc_type_id,
             extracted_values=values,
+            metadata=metadata,
         )
-        document = await service.update_document(services, document_id, patch)
+        try:
+            document = await service.update_document(services, document_id, patch)
+        except ValidationError as exc:
+            return {"error": str(exc)}
         return document.model_dump(mode="json")
 
     async def assign_document_to_folder(

@@ -30,6 +30,11 @@ def build_value_terms(values: Iterable[ExtractedValue]) -> list[str]:
     return terms
 
 
+def build_metadata_text(metadata: dict[str, str]) -> str:
+    """Flatten metadata to newline-joined ``key: value`` for the ``query_string`` keyword leg."""
+    return "\n".join(f"{key}: {value}" for key, value in metadata.items())
+
+
 def document_index_body(config: OpenSearchConfig) -> dict[str, Any]:
     """Mapping for the keyword/metadata document projection (kNN-enabled for summary)."""
     return {
@@ -61,6 +66,17 @@ def document_index_body(config: OpenSearchConfig) -> dict[str, Any]:
                         "confidence": {"type": "float"},
                     },
                 },
+                "metadata": {
+                    "type": "nested",
+                    "properties": {
+                        "key": {"type": "keyword"},
+                        "value": {
+                            "type": "text",
+                            "fields": {"keyword": {"type": "keyword", "ignore_above": 512}},
+                        },
+                    },
+                },
+                "metadata_text": {"type": "text"},
                 "folder_ids": {"type": "keyword"},
                 "folder_ancestor_ids": {"type": "keyword"},
                 "primary_folder_id": {"type": "keyword"},
@@ -185,6 +201,7 @@ def build_document_filters(
     created_from: str | None = None,
     created_to: str | None = None,
     extracted_values: dict[str, str] | None = None,
+    metadata: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Build filter clauses for the document projection (keyword + nested, FR-20)."""
     filters: list[dict[str, Any]] = []
@@ -209,6 +226,22 @@ def build_document_filters(
                             "filter": [
                                 {"term": {"extracted_values.key": key}},
                                 {"term": {"extracted_values.value.keyword": value}},
+                            ]
+                        }
+                    },
+                }
+            }
+        )
+    for key, value in (metadata or {}).items():
+        filters.append(
+            {
+                "nested": {
+                    "path": "metadata",
+                    "query": {
+                        "bool": {
+                            "filter": [
+                                {"term": {"metadata.key": key}},
+                                {"term": {"metadata.value.keyword": value}},
                             ]
                         }
                     },
@@ -244,6 +277,12 @@ def build_document_search_body(
                 "nested": {
                     "path": "extracted_values",
                     "query": {"match": {"extracted_values.value": query}},
+                }
+            },
+            {
+                "nested": {
+                    "path": "metadata",
+                    "query": {"match": {"metadata.value": query}},
                 }
             },
         ]

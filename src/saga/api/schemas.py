@@ -57,6 +57,7 @@ class DocumentResponse(BaseModel):
     doc_type_id: str | None = None
     summary: str | None = None
     extracted_values: list[ExtractedValue] = Field(default_factory=list)
+    metadata: dict[str, str] = Field(default_factory=dict)
     folders: list[FolderRef] = Field(default_factory=list)
     primary_folder_path: list[str] = Field(default_factory=list)
     notes: list[Note] = Field(default_factory=list)
@@ -88,6 +89,7 @@ class DocumentPatch(BaseModel):
     summary: str | None = None
     doc_type_id: str | None = None
     extracted_values: list[ExtractedValue] | None = None
+    metadata: dict[str, str] | None = None
 
     def is_empty(self) -> bool:
         return self.model_dump(exclude_unset=True) == {}
@@ -129,6 +131,9 @@ class SearchRequest(BaseModel):
     filters: dict[str, str] = Field(
         default_factory=dict, description="Match extracted values, e.g. {invoice_number: '12'}."
     )
+    metadata: dict[str, str] = Field(
+        default_factory=dict, description="Match metadata, e.g. {project: 'Apollo'}."
+    )
 
 
 class DocumentSearchRequest(BaseModel):
@@ -146,6 +151,9 @@ class DocumentSearchRequest(BaseModel):
     status: str | None = Field(default=None, description="Filter by processing status.")
     filters: dict[str, str] = Field(
         default_factory=dict, description="Match extracted values, e.g. {invoice_number: '12'}."
+    )
+    metadata: dict[str, str] = Field(
+        default_factory=dict, description="Match metadata, e.g. {project: 'Apollo'}."
     )
 
 

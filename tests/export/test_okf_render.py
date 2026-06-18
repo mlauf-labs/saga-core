@@ -243,3 +243,11 @@ def test_render_events_jsonl_one_object_per_line() -> None:
 
 def test_render_events_jsonl_empty() -> None:
     assert render_events_jsonl([]) == ""
+
+
+def test_render_concept_emits_metadata_top_level_and_skips_reserved() -> None:
+    doc = _doc(metadata={"project": "Apollo", "type": "SHOULD_NOT_OVERRIDE"})
+    text = render_concept(doc, store_name="saga", public_base_url=None)
+    fm = yaml.safe_load(text.partition("\n---\n")[0][len("---\n") :])
+    assert fm["project"] == "Apollo"  # free-form key emitted top-level
+    assert fm["type"] == "invoice"  # reserved key NOT overwritten by metadata

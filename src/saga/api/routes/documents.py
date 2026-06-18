@@ -91,6 +91,7 @@ async def search_documents(
         title=request.title,
         status=request.status,
         filters=request.filters or None,
+        metadata=request.metadata or None,
     )
     return DocumentListResponse(
         items=[DocumentResponse.from_document(doc, include_content=False) for doc in documents],

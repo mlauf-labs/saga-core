@@ -125,3 +125,27 @@ async def test_replace_document_keeps_id(
     stored = await db.get_document(document_id)
     assert stored is not None
     assert stored.content_hash != ""
+
+
+def test_patch_sets_metadata(client: TestClient, auth_headers: dict[str, str]) -> None:
+    document_id = _upload(client, auth_headers).json()["document_id"]
+    response = client.patch(
+        f"/documents/{document_id}",
+        json={"metadata": {"project": "Apollo"}},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["metadata"] == {"project": "Apollo"}
+
+
+def test_patch_rejects_reserved_metadata_key(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    document_id = _upload(client, auth_headers).json()["document_id"]
+    response = client.patch(
+        f"/documents/{document_id}",
+        json={"metadata": {"saga_id": "x"}},
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
+    assert response.json()["code"] == "validation_error"

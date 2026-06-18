@@ -95,10 +95,12 @@ round-trip are implemented, tested, merged to `develop`, **and surfaced in the U
 
 ### Deferred / smaller items (acceptable as-is for now)
 
-- [ ] **Lossless foreign round-trip:** `Document` has no free-form metadata bag, so unknown
-      (non-`saga_*`, non-standard) frontmatter keys are dropped on foreign import. A
-      `Document.metadata` dict would close this (round-trip spec §11). *Next feature candidate;
-      needs its own brainstorm (schema migration + import/export wiring).*
+- [x] **Lossless foreign round-trip — shipped.** Added a free-form `Document.metadata`
+      (`dict[str, str]`): non-reserved frontmatter keys are captured on import and re-emitted
+      top-level on export, so foreign bundles round-trip losslessly. Editable via REST `PATCH` +
+      the MCP write tool, and projected to OpenSearch (full-text + filterable). Spec:
+      `docs/superpowers/specs/2026-06-18-document-metadata-design.md` (FR-57). *(saga-ui editor
+      is a separate follow-on deliverable.)*
 - [ ] **Streaming importer** for very large bundles (v1 extracts to a temp dir / reads into
       memory).
 - [x] **Timeline test debt — resolved.** Stage-level guards now have tests: `classify_doc_type`

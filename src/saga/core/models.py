@@ -169,6 +169,7 @@ class Document(BaseModel):
     doc_type_id: str | None = None
     summary: str | None = None
     extracted_values: list[ExtractedValue] = Field(default_factory=list)
+    metadata: dict[str, str] = Field(default_factory=dict)
     folders: list[FolderRef] = Field(default_factory=list)
     notes: list[Note] = Field(default_factory=list)
 

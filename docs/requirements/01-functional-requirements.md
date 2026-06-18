@@ -285,6 +285,14 @@ After conversion, every document is analysed by an LLM. All prompts live as
 - **FR-56 Round-trip fidelity** — Exporting an archive and importing it into a fresh
   instance reproduces the same state (documents, metadata, content, notes, doc-type
   assignment, folder tree, memberships, and events), verified by a round-trip test.
+- **FR-57 Document metadata** — Each document carries a free-form `metadata` string map
+  (`dict[str, str]`), editable via `PATCH /documents/{id}` and the
+  `update_document_metadata` MCP tool. Keys must not be reserved OKF keys (`type`,
+  `title`, `description`, `tags`, `resource`, `timestamp`) or `saga_`-prefixed. Metadata
+  is projected to OpenSearch and is full-text searchable and exactly filterable (the
+  `metadata` map on `/documents/search` and `/search`). On OKF export it is written as
+  **top-level** frontmatter; on import any non-reserved frontmatter key is captured into
+  it, giving foreign OKF bundles a lossless round-trip.
 
 ---
 
