@@ -136,5 +136,9 @@ metrics:
   stuck_threshold_seconds: 3600
   prices: {}   # e.g. {"gpt-4o-mini": {prompt_per_1k: 0.15, completion_per_1k: 0.6}}
 
+events:
+  publish: ${SAGA_EVENTS_PUBLISH:-false}   # announce document.ingested on Redis for saga-agents
+  channel: ${SAGA_EVENT_CHANNEL:-saga:events}
+
 logging:
   config_file: config/logging.yaml
