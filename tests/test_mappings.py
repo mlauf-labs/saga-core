@@ -10,6 +10,7 @@ from saga.storage.mappings import (
     build_filters,
     build_folder_filter,
     build_keyword_query_body,
+    build_metadata_text,
     build_more_like_this_body,
     build_semantic_query_body,
     build_summary_knn_body,
@@ -102,6 +103,25 @@ def test_build_value_terms_includes_raw_and_normalized() -> None:
 
 def test_build_value_terms_empty() -> None:
     assert build_value_terms([]) == []
+
+
+# --------------------------------------------------------------------------- #
+# Metadata projection (nested + flattened text)                                 #
+# --------------------------------------------------------------------------- #
+
+
+def test_metadata_text_flattens_key_values() -> None:
+    assert build_metadata_text({"project": "Apollo", "rank": "1"}) == "project: Apollo\nrank: 1"
+    assert build_metadata_text({}) == ""
+
+
+def test_document_index_body_has_metadata_fields() -> None:
+    props = document_index_body(OpenSearchConfig())["mappings"]["properties"]
+    assert props["metadata"]["type"] == "nested"
+    assert props["metadata"]["properties"]["key"]["type"] == "keyword"
+    assert props["metadata"]["properties"]["value"]["type"] == "text"
+    assert props["metadata"]["properties"]["value"]["fields"]["keyword"]["type"] == "keyword"
+    assert props["metadata_text"]["type"] == "text"
 
 
 # --------------------------------------------------------------------------- #

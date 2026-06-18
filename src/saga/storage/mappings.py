@@ -30,6 +30,11 @@ def build_value_terms(values: Iterable[ExtractedValue]) -> list[str]:
     return terms
 
 
+def build_metadata_text(metadata: dict[str, str]) -> str:
+    """Flatten metadata to newline-joined ``key: value`` for the ``query_string`` keyword leg."""
+    return "\n".join(f"{key}: {value}" for key, value in metadata.items())
+
+
 def document_index_body(config: OpenSearchConfig) -> dict[str, Any]:
     """Mapping for the keyword/metadata document projection (kNN-enabled for summary)."""
     return {
@@ -61,6 +66,17 @@ def document_index_body(config: OpenSearchConfig) -> dict[str, Any]:
                         "confidence": {"type": "float"},
                     },
                 },
+                "metadata": {
+                    "type": "nested",
+                    "properties": {
+                        "key": {"type": "keyword"},
+                        "value": {
+                            "type": "text",
+                            "fields": {"keyword": {"type": "keyword", "ignore_above": 512}},
+                        },
+                    },
+                },
+                "metadata_text": {"type": "text"},
                 "folder_ids": {"type": "keyword"},
                 "folder_ancestor_ids": {"type": "keyword"},
                 "primary_folder_id": {"type": "keyword"},
