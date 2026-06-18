@@ -25,3 +25,15 @@ def is_reserved_key(key: str) -> bool:
 def metadata_from_frontmatter(frontmatter: dict[str, Any]) -> dict[str, str]:
     """Return the free-form metadata in *frontmatter*: every non-reserved key, value→str."""
     return {k: str(v) for k, v in frontmatter.items() if not is_reserved_key(k)}
+
+
+def validate_metadata_keys(metadata: dict[str, str]) -> None:
+    """Raise ValueError if any key is empty or SAGA-owned (reserved or ``saga_``)."""
+    for key in metadata:
+        if not key.strip():
+            raise ValueError("Metadata keys must be non-empty.")
+        if is_reserved_key(key):
+            raise ValueError(
+                f"Metadata key '{key}' is reserved (OKF-standard or 'saga_'-prefixed) "
+                "and cannot be set; choose a different key."
+            )

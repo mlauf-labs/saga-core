@@ -24,5 +24,6 @@ async def search(services: ServicesDep, request: SearchRequest) -> SearchRespons
         created_from=request.created_from,
         created_to=request.created_to,
         filters=request.filters or None,
+        metadata=request.metadata or None,
     )
     return SearchResponse(results=result.results)

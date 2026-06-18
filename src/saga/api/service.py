@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from saga.core.errors import ConflictError, NotFoundError, ValidationError
 from saga.core.logging import get_logger
 from saga.core.models import Document, DocumentStatus
+from saga.okf_keys import validate_metadata_keys
 from saga.pipeline.queue import INGEST_JOB
 from saga.storage.postgres import ancestor_ids
 
@@ -200,6 +201,11 @@ async def update_document(services: Services, document_id: str, patch: DocumentP
     if patch.is_empty():
         raise ValidationError("No document fields provided to update.")
     fields = patch.model_dump(exclude_unset=True)
+    if patch.metadata is not None:
+        try:
+            validate_metadata_keys(patch.metadata)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
     document = await services.db.update_document(
         document_id,
         title=fields.get("title"),
@@ -207,6 +213,7 @@ async def update_document(services: Services, document_id: str, patch: DocumentP
         doc_type_id=fields.get("doc_type_id"),
         clear_doc_type="doc_type_id" in fields and fields.get("doc_type_id") is None,
         extracted_values=patch.extracted_values,
+        metadata=patch.metadata,
     )
     await reproject(services, document_id)
     _log.info("document_updated", document_id=document_id)
