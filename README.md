@@ -32,6 +32,11 @@
 - **Search** via an **MCP server** offering performant **fused hybrid** (keyword +
   semantic, RRF) retrieval, metadata filtering, and folder-tree browsing — plus write
   tools to reorganise documents, folders, doc-types, and notes.
+- **Track a timeline** of **audit** events (what the pipeline did and *why*) and **content**
+  events (dated facts in the documents — past, future, and recurring), queryable via
+  `GET /timeline`, `GET /documents/{id}/timeline`, and an upcoming-view `GET /agenda`.
+- **Interchange via OKF**: export the whole archive as an **Open Knowledge Format** bundle
+  (`GET /export/okf`) and import one back faithfully (`POST /import/okf`).
 - **Back up** everything to a directory tree via a paginated export API + script.
 
 See the [architecture](docs/requirements/03-architecture.md) for details.
@@ -101,6 +106,7 @@ Start at the [documentation index](docs/README.md).
 
 - [Operations & deployment](docs/operations.md) · [Configuration reference](docs/configuration.md)
 - [REST API](docs/api/rest-api.md) · [MCP tools](docs/api/mcp-tools.md) · [Backup](docs/api/backup.md)
+- [OKF ↔ SAGA integration roadmap](docs/okf-integration-roadmap.md) (timeline + OKF interchange)
 - [Functional requirements](docs/requirements/01-functional-requirements.md) ·
   [Non-functional requirements](docs/requirements/02-non-functional-requirements.md) ·
   [Architecture](docs/requirements/03-architecture.md)

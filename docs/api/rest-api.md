@@ -237,6 +237,70 @@ done
 Prefer the bundled script for full backups: `saga-backup` (see
 [`backup.md`](backup.md)).
 
+## Timeline (FR-44…FR-50)
+
+SAGA records a **timeline** of events in two categories: **audit** (what the pipeline did
+and *why* — placement, reclassification, …) and **content** (dated facts extracted from the
+documents themselves — past events, future appointments/deadlines, and recurring
+obligations). Both are read through the same endpoints; filter with `category`.
+
+### `GET /timeline`
+Query the timeline. All query params are optional:
+
+| Param | Meaning |
+|-------|---------|
+| `document_id` | restrict to one document |
+| `folder_id` + `include_subtree` (default `true`) | restrict to a folder (and its subtree) |
+| `category` | repeatable: `audit` and/or `content` |
+| `event_type` | repeatable: e.g. `placement`, `reclassification`, `appointment`, `dated_fact` |
+| `occurred_from` / `occurred_to` | ISO-8601 bounds on the event date |
+| `order_by` | `recorded_at` (default) or `occurred_at` |
+| `limit` / `offset` | pagination (`limit=0` → server default) |
+| `expand` | when `true`, expand recurring rules into individual occurrences within the configured horizon |
+
+Returns `{ "items": [ Event… ] }`. Each `Event` has `event_id`, `category`, `event_type`,
+`document_id?`, `folder_id?`, `occurred_at?`, `recorded_at`, `actor`, `summary`,
+`confidence?`, and a free-form `details` object (e.g. placement rationale).
+
+### `GET /documents/{document_id}/timeline`
+The timeline for a single document. Query: `category` (repeatable), `order_by`, `limit`,
+`offset`. Same `Event` shape. `404` if the document is unknown.
+
+### `GET /agenda`
+The **upcoming** view: future and recurring content events, ascending by date (recurring
+rules expanded into occurrences). Query: `folder_id` (+ subtree), `from` (default: now),
+`to` (default: the configured horizon), `limit`, `offset`. Returns `{ "items": [ Event… ] }`.
+
+## OKF interchange (FR-51…FR-56)
+
+SAGA can project its archive into the **Open Knowledge Format** (a directory of markdown
+concept files + reserved `index.md`/`log.md`) and import an OKF bundle back. See the
+[OKF integration roadmap](../okf-integration-roadmap.md). Export is a *projection* of the
+system of record — never a change to how data is stored.
+
+### `GET /export/okf`
+Stream the whole archive as an **OKF `.tar.gz` bundle**. Query: `with_originals` (bool,
+default `false`) colocates the original binaries next to each concept file. The response is
+`application/gzip` with a `Content-Disposition` attachment filename
+`okf-<store>-<timestamp>.tar.gz`. The bundle also carries machine-readable extras
+(`saga-manifest.json`, `saga-events.jsonl`) that generic OKF consumers ignore but SAGA uses
+for a faithful round-trip (stable ids, exact folder tree, the event log).
+
+### `POST /import/okf`
+Import an OKF bundle. `multipart/form-data` with a single `file` field (the `.tar.gz`). A
+bundle that carries `saga-manifest.json` is restored **faithfully** (documents, folders,
+doc-types, memberships, and events, preserving ids); a *foreign* OKF bundle (concept files
+only) is imported and re-enriched through the normal pipeline. Returns an `ImportSummary`:
+
+```json
+{
+  "documents_imported": 12, "documents_skipped": 0, "documents_failed": 0,
+  "folders_created": 3, "folders_reused": 1,
+  "doc_types_created": 2, "doc_types_reused": 0,
+  "events_restored": 40, "events_skipped": 0, "errors": []
+}
+```
+
 ## Notes
 
 - Ingestion (convert → classify doc-type → extract → summarise → similarity → place →

@@ -83,6 +83,20 @@ List documents in a folder branch (FR-22).
 ### `list_doc_types`
 List all doc-types (id, name, description, document count).
 
+### `get_timeline`
+Query the timeline — **audit** events (what the pipeline did and why) and **content**
+events (dated facts) (FR-44…FR-48). Returns `{ items, limit, offset }`.
+
+- `document_id` (string, optional) · `folder_id` (string, optional, subtree)
+- `category` (`audit` | `content`; omit for both)
+- `order_by` (`recorded_at` default | `occurred_at`) · `limit`, `offset`
+
+### `get_agenda`
+The **upcoming** view: future and recurring content events, ascending by date with recurring
+rules expanded into occurrences (FR-47/49). Returns `{ items, limit, offset }`.
+
+- `folder_id` (string, optional, subtree) · `limit`, `offset`
+
 ## Write tools
 
 These let an agent **reorganise** the store; all writes go through the shared service

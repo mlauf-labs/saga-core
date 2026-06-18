@@ -63,9 +63,10 @@ Run lint, type-check, and tests before considering a change done — they must b
 - **Prompts live in `prompts/*.md`.** Never inline prompt text or MCP tool descriptions as
   Python string literals — load and render the Markdown files.
 - **Structured extraction uses `saidex`.** For any LLM structured-data extraction, use
-  `extract_from_text` / `get_structured_data` against a LangChain chat model
-  (`saga.llm.providers.build_chat_model`) with a Pydantic schema. Do **not** hand-roll JSON
-  parsing of LLM output. Embeddings are a separate path.
+  `extract_data_from_text` (or `extract_data_with_tools` for tool-loop extraction, e.g.
+  folder placement) against a LangChain chat model (`saga.llm.providers.build_chat_model`)
+  with a Pydantic schema. Do **not** hand-roll JSON parsing of LLM output. Embeddings are a
+  separate path.
 - **Actionable errors.** Raise from the `saga.core.errors` hierarchy with messages saying
   what failed and how to fix it. No bare/silent failures.
 - **Structured logging.** Use `saga.core.logging.get_logger("saga.<area>")`; never `print`.
