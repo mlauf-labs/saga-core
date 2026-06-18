@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from saga.core.logging import get_logger
 from saga.core.models import Document, DocumentStatus, Event, ExtractedValue
 from saga.export.okf import render_notes_suffix
+from saga.okf_keys import metadata_from_frontmatter
 from saga.pipeline.queue import INDEX_JOB, INGEST_JOB
 from saga.scripts.layout import backup_basename
 
@@ -261,6 +262,7 @@ class OkfBundleImporter:
             doc_type_id=doctype_ids.get(type_name),
             summary=fm.get("description"),
             extracted_values=[ExtractedValue(**v) for v in fm.get("saga_extracted_values", [])],
+            metadata=metadata_from_frontmatter(fm),
             created_at=_parse_dt(fm.get("saga_created_at")) or now,
             updated_at=_parse_dt(fm.get("timestamp")) or now,
         )
@@ -358,6 +360,7 @@ class OkfBundleImporter:
             content_markdown=content,
             doc_type_id=doc_type_id,
             summary=fm.get("description"),
+            metadata=metadata_from_frontmatter(fm),
             created_at=now,
             updated_at=now,
         )
