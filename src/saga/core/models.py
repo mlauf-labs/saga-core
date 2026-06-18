@@ -55,6 +55,7 @@ class EventType(StrEnum):
     DOCUMENT_DELETED = "document_deleted"
     FOLDER_DELETED = "folder_deleted"
     DOC_TYPE_DELETED = "doc_type_deleted"
+    EVENT_CURATED = "event_curated"
     # content (Phase 2/3)
     DATED_FACT = "dated_fact"
     APPOINTMENT = "appointment"
