@@ -57,6 +57,9 @@ ALL_TOOL_NAMES = {
     "add_folder_note",
     "update_folder_note",
     "delete_folder_note",
+    "merge_events",
+    "delete_event",
+    "update_event",
 }
 
 
