@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest_asyncio
+import yaml
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from saga.core.config import AppConfig
@@ -149,5 +150,71 @@ async def test_export_then_import_reproduces_state(source: PostgresStore) -> Non
         assert events["e-audit"].folder_id == folders["Finanzen"].folder_id
         assert events["e-content"].folder_id is None
         assert events["e-content"].event_type == EventType.DATED_FACT
+    finally:
+        await target.close()
+
+
+_FOREIGN_CONCEPT = (
+    "---\n"
+    "type: note\n"
+    "title: Apollo brief\n"
+    "project: Apollo\n"
+    "priority: high\n"
+    "---\n"
+    "\n# Body\n\nForeign content.\n"
+)
+
+
+async def test_foreign_metadata_survives_import_then_export(source: PostgresStore) -> None:
+    # A foreign OKF bundle (no saga-manifest.json, no saga_* keys) carries extra top-level
+    # frontmatter keys; these must land in Document.metadata and re-export unchanged.
+    target = source
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = Path(tmp) / "bundle"
+            bundle.mkdir()
+            (bundle / "Apollo-brief.md").write_text(_FOREIGN_CONCEPT, encoding="utf-8")
+
+            importer = OkfBundleImporter(
+                db=target, minio=InMemoryBinaryStore(), queue=FakeQueue(), config=AppConfig()
+            )
+            summary = await importer.run(bundle)
+
+        assert summary.documents_imported == 1
+        # Foreign bundles get fresh uuid ids, so locate the doc via list_documents, not a fixed id.
+        docs, total = await target.list_documents(page=1, page_size=10)
+        assert total == 1
+        doc = docs[0]
+        assert doc.metadata == {"project": "Apollo", "priority": "high"}
+
+        builder = OkfBundleBuilder(
+            db=target,
+            minio=InMemoryBinaryStore(),
+            timeline=TimelineService(target),
+            store_name="saga",
+            public_base_url=None,
+            with_originals=False,
+        )
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            await builder.write_bundle(tar)
+
+        buf.seek(0)
+        concept_text = ""
+        with tarfile.open(fileobj=buf, mode="r:gz") as tar:
+            for member in tar.getmembers():
+                if member.name.endswith(".md") and Path(member.name).name not in {
+                    "index.md",
+                    "log.md",
+                }:
+                    extracted = tar.extractfile(member)
+                    assert extracted is not None
+                    concept_text = extracted.read().decode("utf-8")
+                    break
+        assert concept_text, "expected a re-exported concept file"
+
+        fm = yaml.safe_load(concept_text.partition("\n---\n")[0][len("---\n") :])
+        assert fm["project"] == "Apollo"
+        assert fm["priority"] == "high"
     finally:
         await target.close()
