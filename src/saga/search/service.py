@@ -59,6 +59,7 @@ class SearchService:
             "summary^2",
             "content_markdown",
             "doc_type",
+            "metadata_text",
         ]
         self._keyword_default_operator = keyword_default_operator
         self._rrf_k = rrf_k
@@ -82,6 +83,7 @@ class SearchService:
         created_from: str | None = None,
         created_to: str | None = None,
         filters: dict[str, str] | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> HybridSearchResult:
         """Run a fused hybrid search and return one ranked document list (FR-19).
 
@@ -114,6 +116,7 @@ class SearchService:
                 created_from=created_from,
                 created_to=created_to,
                 extracted_values=filters,
+                metadata=metadata,
             )
             keyword_hits = await self._opensearch.keyword_search(
                 query=keyword,
@@ -225,6 +228,7 @@ class SearchService:
         title: str | None = None,
         status: str | None = None,
         filters: dict[str, str] | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> tuple[list[Document], int]:
         """Keyword/filter search over the projection, hydrated from Postgres (FR-20)."""
         document_filters = build_document_filters(
@@ -234,6 +238,7 @@ class SearchService:
             title=title,
             status=status,
             extracted_values=filters,
+            metadata=metadata,
         )
         ids, total = await self._opensearch.document_search(
             query=query,

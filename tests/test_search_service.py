@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any, cast
 
 import pytest
 
@@ -405,6 +406,51 @@ async def test_search_documents_hydrates_from_db() -> None:
     assert total == 2
     assert [doc.document_id for doc in documents] == ["d2", "d1"]
     assert opensearch.document_search_calls[0]["from_"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# Metadata filtering                                                            #
+# --------------------------------------------------------------------------- #
+
+
+def test_default_keyword_fields_include_metadata_text() -> None:
+    opensearch = FakeOpenSearch()
+    db = FakeDB()
+    embedder = FakeEmbedder()
+    service = _service(opensearch, db, embedder)
+
+    assert "metadata_text" in service._keyword_fields
+
+
+async def test_search_documents_threads_metadata_filter() -> None:
+    opensearch = FakeOpenSearch(document_search_result=(["d1"], 1))
+    db = FakeDB(documents={"d1": _doc("d1")})
+    embedder = FakeEmbedder()
+    service = _service(opensearch, db, embedder)
+
+    await service.search_documents(query="invoice", metadata={"project": "Apollo"})
+
+    filters = cast("list[dict[str, Any]]", opensearch.document_search_calls[0]["filters"])
+    nested = [f for f in filters if "nested" in f and f["nested"]["path"] == "metadata"]
+    assert nested, "expected a nested metadata filter on the document search"
+    must = nested[0]["nested"]["query"]["bool"]["filter"]
+    assert {"term": {"metadata.key": "project"}} in must
+    assert {"term": {"metadata.value.keyword": "Apollo"}} in must
+
+
+async def test_hybrid_search_threads_metadata_filter() -> None:
+    opensearch = FakeOpenSearch(
+        keyword_hits=[DocumentHit(document_id="d1", title="t", score=1.0, snippet="kw")]
+    )
+    db = FakeDB(documents={"d1": _doc("d1")})
+    embedder = FakeEmbedder()
+    service = _service(opensearch, db, embedder)
+
+    await service.hybrid_search(keyword_query="invoice", metadata={"project": "Apollo"})
+
+    filters = cast("list[dict[str, Any]]", opensearch.keyword_calls[0]["filters"])
+    nested = [f for f in filters if "nested" in f and f["nested"]["path"] == "metadata"]
+    assert nested, "expected a nested metadata filter on the keyword leg"
 
 
 async def test_get_folder_tree_returns_db_tree() -> None:
