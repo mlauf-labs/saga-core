@@ -165,3 +165,36 @@ async def test_update_event_unknown_returns_error(services: Services) -> None:
         await mcp.call_tool("update_event", {"event_id": "no-such-event", "summary": "x"})
     )
     assert "error" in result
+
+
+async def test_update_event_details_replaces_details(services: Services) -> None:
+    """update_event with details={"k": "v"} stores and returns the new details."""
+    event = _make_event()
+    await services.db.append_event(event)
+    mcp = build_server(services.config, services)
+
+    result = _structured(
+        await mcp.call_tool(
+            "update_event",
+            {"event_id": event.event_id, "details": {"k": "v"}},
+        )
+    )
+
+    assert result["event_id"] == event.event_id
+    assert result["details"]["k"] == "v"
+
+
+async def test_update_event_malformed_occurred_at_returns_error(services: Services) -> None:
+    """update_event with a malformed ISO string returns {error: ...} and does not raise."""
+    event = _make_event()
+    await services.db.append_event(event)
+    mcp = build_server(services.config, services)
+
+    result = _structured(
+        await mcp.call_tool(
+            "update_event",
+            {"event_id": event.event_id, "occurred_at": "not-a-date"},
+        )
+    )
+
+    assert "error" in result

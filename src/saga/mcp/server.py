@@ -536,11 +536,14 @@ def build_server(
         summary: Annotated[str | None, Field(description="New summary.")] = None,
         occurred_at: Annotated[str | None, Field(description="New ISO 8601 event time.")] = None,
         confidence: Annotated[float | None, Field(description="New confidence 0-1.")] = None,
+        details: Annotated[
+            dict[str, Any] | None, Field(description="New details dict (full replacement).")
+        ] = None,
     ) -> dict[str, Any]:
         from datetime import datetime
 
-        occ = datetime.fromisoformat(occurred_at) if occurred_at else None
         try:
+            occ = datetime.fromisoformat(occurred_at) if occurred_at else None
             event = await mutations.update_event(
                 services.db,
                 services.db,
@@ -548,8 +551,9 @@ def build_server(
                 summary=summary,
                 occurred_at=occ,
                 confidence=confidence,
+                details=details,
             )
-        except NotFoundError as exc:
+        except (NotFoundError, ValueError) as exc:
             return {"error": str(exc)}
         return event.model_dump(mode="json")
 
