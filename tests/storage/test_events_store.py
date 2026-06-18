@@ -7,7 +7,7 @@ import pytest_asyncio
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from saga.core.models import Event, EventCategory, EventType
+from saga.core.models import Document, Event, EventCategory, EventType
 from saga.storage.postgres import PostgresStore
 
 
@@ -139,3 +139,65 @@ async def test_replace_content_events_empty_clears(store: PostgresStore) -> None
     )
     await store.replace_content_events("d2", [])
     assert await store.query_events(categories=[EventCategory.CONTENT], document_id="d2") == []
+
+
+def _document(document_id: str) -> Document:
+    now = datetime(2026, 5, 1, tzinfo=UTC)
+    return Document(
+        document_id=document_id,
+        title="Doc",
+        filename="doc.pdf",
+        mime_type="application/pdf",
+        size_bytes=1,
+        content_hash="h" + document_id,
+        minio_object=f"objects/{document_id}",
+        created_at=now,
+        updated_at=now,
+    )
+
+
+async def test_delete_document_removes_content_events_keeps_audit(store: PostgresStore) -> None:
+    await store.create_document(_document("doc1"))
+    await store.append_event(
+        _event(category=EventCategory.AUDIT, event_type=EventType.DOC_INGESTED, document_id="doc1")
+    )
+    await store.append_event(
+        _event(category=EventCategory.CONTENT, event_type=EventType.DATED_FACT, document_id="doc1")
+    )
+
+    await store.delete_document("doc1")
+
+    content = await store.query_events(categories=[EventCategory.CONTENT], document_id="doc1")
+    assert content == []  # content events followed the document
+    audits = await store.query_events(categories=[EventCategory.AUDIT], document_id="doc1")
+    assert len(audits) == 1  # audit history is kept (dangling document_id is intentional)
+
+
+async def test_delete_orphaned_content_events(store: PostgresStore) -> None:
+    await store.create_document(_document("doc1"))
+    # Content event for an existing document (must be kept).
+    await store.append_event(
+        _event(category=EventCategory.CONTENT, event_type=EventType.DATED_FACT, document_id="doc1")
+    )
+    # Orphaned content events (no matching document).
+    await store.append_event(
+        _event(category=EventCategory.CONTENT, event_type=EventType.DATED_FACT, document_id="gone1")
+    )
+    await store.append_event(
+        _event(
+            category=EventCategory.CONTENT,
+            event_type=EventType.APPOINTMENT,
+            document_id="gone2",
+        )
+    )
+    # An orphaned AUDIT event must NOT be touched.
+    await store.append_event(
+        _event(category=EventCategory.AUDIT, event_type=EventType.MOVE, document_id="gone1")
+    )
+
+    removed = await store.delete_orphaned_content_events()
+
+    assert removed == 2
+    remaining = await store.query_events(categories=[EventCategory.CONTENT])
+    assert [e.document_id for e in remaining] == ["doc1"]
+    assert len(await store.query_events(categories=[EventCategory.AUDIT])) == 1

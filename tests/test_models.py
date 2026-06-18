@@ -12,6 +12,7 @@ from saga.core.models import (
     DocType,
     Document,
     DocumentStatus,
+    EventType,
     ExtractedValue,
     Folder,
     FolderNode,
@@ -25,6 +26,12 @@ from saga.core.models import (
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def test_event_type_has_deletion_audit_values() -> None:
+    assert EventType.DOCUMENT_DELETED.value == "document_deleted"
+    assert EventType.FOLDER_DELETED.value == "folder_deleted"
+    assert EventType.DOC_TYPE_DELETED.value == "doc_type_deleted"
 
 
 # --------------------------------------------------------------------------- #

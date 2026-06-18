@@ -228,6 +228,8 @@ async def delete_document(services: Services, document_id: str) -> None:
     await services.minio.remove_object(document_id)
     await services.db.delete_document(document_id)
     await services.opensearch.delete_document(document_id)
+    if services.events is not None:
+        await services.events.record_document_deleted(document_id=document_id, title=document.title)
     _log.info("document_deleted", document_id=document_id)
 
 
@@ -408,8 +410,15 @@ async def update_folder(
 
 
 async def delete_folder(services: Services, folder_id: str, *, strategy: str = "reject") -> None:
+    folder = await services.db.get_folder(folder_id)
+    if folder is None:
+        raise NotFoundError(f"Folder '{folder_id}' was not found.")
     affected = await services.db.delete_folder(folder_id, strategy=strategy)
     await _reproject_affected(services, affected)
+    if services.events is not None:
+        await services.events.record_folder_deleted(
+            folder_id=folder_id, name=folder.name, strategy=strategy, affected=len(affected)
+        )
 
 
 async def folder_tree(
@@ -484,7 +493,12 @@ async def update_doc_type(
 
 async def delete_doc_type(services: Services, doc_type_id: str) -> None:
     """Delete a doc-type only when unused (otherwise 409, FR-14)."""
+    doc_type = await services.db.get_doc_type(doc_type_id)
+    if doc_type is None:
+        raise NotFoundError(f"Doc-type '{doc_type_id}' was not found.")
     await services.db.delete_doc_type(doc_type_id)
+    if services.events is not None:
+        await services.events.record_doc_type_deleted(doc_type_id=doc_type_id, name=doc_type.name)
 
 
 async def list_documents_by_doc_type(

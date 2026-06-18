@@ -203,3 +203,50 @@ class EventRecorder:
                 details={"old_name": old_name, "new_name": new_name},
             )
         )
+
+    async def record_document_deleted(
+        self, *, document_id: str, title: str, actor: str = "user"
+    ) -> None:
+        await self._safe_append(
+            self._new(
+                event_type=EventType.DOCUMENT_DELETED,
+                actor=actor,
+                summary=f"Deleted document '{title}'.",
+                document_id=document_id,
+                dedupe_key=None,
+                details={"title": title},
+            )
+        )
+
+    async def record_folder_deleted(
+        self,
+        *,
+        folder_id: str,
+        name: str,
+        strategy: str,
+        affected: int,
+        actor: str = "user",
+    ) -> None:
+        await self._safe_append(
+            self._new(
+                event_type=EventType.FOLDER_DELETED,
+                actor=actor,
+                summary=f"Deleted folder '{name}' ({strategy}, {affected} document(s) affected).",
+                folder_id=folder_id,
+                dedupe_key=None,
+                details={"name": name, "strategy": strategy, "affected": affected},
+            )
+        )
+
+    async def record_doc_type_deleted(
+        self, *, doc_type_id: str, name: str, actor: str = "user"
+    ) -> None:
+        await self._safe_append(
+            self._new(
+                event_type=EventType.DOC_TYPE_DELETED,
+                actor=actor,
+                summary=f"Deleted doc-type '{name}'.",
+                dedupe_key=None,
+                details={"doc_type_id": doc_type_id, "name": name},
+            )
+        )

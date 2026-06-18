@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from sqlalchemy import (
     JSON,
@@ -56,6 +56,8 @@ from saga.core.models import (
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from sqlalchemy import CursorResult
 
     from saga.core.config import PostgresConfig
 
@@ -841,7 +843,29 @@ class PostgresStore:
             row = await session.get(DocumentRow, document_id)
             if row is None:
                 raise NotFoundError(f"Document '{document_id}' was not found.")
+            # Content events are a derivable projection of the document; they follow it
+            # on delete. Audit events are append-only history and are kept (their now
+            # dangling document_id reference is intentional).
+            await session.execute(
+                delete(EventRow).where(
+                    EventRow.document_id == document_id,
+                    EventRow.category == str(EventCategory.CONTENT),
+                )
+            )
             await session.delete(row)
+
+    async def delete_orphaned_content_events(self) -> int:
+        """Delete CONTENT events whose document_id no longer exists. Returns the count."""
+        async with self._sessions()() as session, session.begin():
+            existing = select(DocumentRow.id)
+            result = await session.execute(
+                delete(EventRow).where(
+                    EventRow.category == str(EventCategory.CONTENT),
+                    EventRow.document_id.is_not(None),
+                    EventRow.document_id.notin_(existing),
+                )
+            )
+            return int(cast("CursorResult[Any]", result).rowcount or 0)
 
     async def list_documents_by_doc_type(
         self, doc_type_id: str, *, page: int, page_size: int
