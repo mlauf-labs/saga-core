@@ -39,3 +39,10 @@ def test_events_config_bool_coercion_false() -> None:
 def test_events_config_bool_coercion_true() -> None:
     ec = EventsConfig(publish="true")  # type: ignore[arg-type]
     assert ec.publish is True
+
+
+def test_events_config_yaml_merge_path() -> None:
+    """A non-default events block is merged correctly (covers the 'events' key in load_config)."""
+    cfg = AppConfig.model_validate({"events": {"publish": True, "channel": "custom:ch"}})
+    assert cfg.events.publish is True
+    assert cfg.events.channel == "custom:ch"

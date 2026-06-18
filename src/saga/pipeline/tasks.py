@@ -55,20 +55,23 @@ _log = get_logger("saga.pipeline.tasks")
 
 async def _announce_ingested(
     ctx: dict[str, Any],
-    config: "AppConfig",
+    config: AppConfig,
     document_id: str,
 ) -> None:
     """Publish document.ingested to Redis when events.publish is enabled.
 
-    Best-effort wrapper: both the publish flag check and the Redis lookup are
-    guarded so that missing infrastructure never breaks an ingestion run.
+    Best-effort wrapper: the entire body is guarded so that any infrastructure
+    failure or misconfiguration can NEVER break an ingestion run.
     """
-    if config.events.publish:
-        redis = ctx.get("redis")
-        if redis is not None:
-            await publish_signal(
-                redis, config.events.channel, "document.ingested", document_id=document_id
-            )
+    try:
+        if config.events.publish:
+            redis = ctx.get("redis")
+            if redis is not None:
+                await publish_signal(
+                    redis, config.events.channel, "document.ingested", document_id=document_id
+                )
+    except Exception as exc:  # best-effort; announcing must never break ingestion
+        _log.warning("announce_ingested_failed", document_id=document_id, error=str(exc))
 
 
 async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:

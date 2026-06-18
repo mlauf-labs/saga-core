@@ -56,3 +56,17 @@ async def test_announce_ingested_does_nothing_when_redis_is_none() -> None:
     ctx: dict = {"redis": None}
     await _announce_ingested(ctx, config, "doc-none")
     # No error, no publish
+
+
+@pytest.mark.asyncio
+async def test_announce_ingested_swallows_exception_from_broken_config() -> None:
+    """Outer try/except must catch errors raised before publish_signal is reached."""
+
+    class BrokenConfig:
+        @property
+        def events(self) -> None:  # type: ignore[override]
+            raise RuntimeError("config exploded")
+
+    ctx: dict = {}
+    # Must not raise even though accessing config.events raises
+    await _announce_ingested(ctx, BrokenConfig(), "doc-broken")  # type: ignore[arg-type]
