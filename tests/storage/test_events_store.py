@@ -201,3 +201,73 @@ async def test_delete_orphaned_content_events(store: PostgresStore) -> None:
     remaining = await store.query_events(categories=[EventCategory.CONTENT])
     assert [e.document_id for e in remaining] == ["doc1"]
     assert len(await store.query_events(categories=[EventCategory.AUDIT])) == 1
+
+
+# ---- helpers for Tasks 2-4 ----
+
+
+def _content_event(event_id: str, document_id: str, summary: str) -> Event:
+    now = datetime.now(UTC)
+    return Event(
+        event_id=event_id,
+        category=EventCategory.CONTENT,
+        event_type=EventType.APPOINTMENT,
+        document_id=document_id,
+        occurred_at=now,
+        recorded_at=now,
+        actor="agent",
+        summary=summary,
+    )
+
+
+# ---- Task 2: get_event + delete_event ----
+
+
+async def test_get_and_delete_event(store: PostgresStore) -> None:
+    ev = _content_event("e1", "doc1", "Dentist 10:00")
+    await store.append_event(ev)
+
+    got = await store.get_event("e1")
+    assert got is not None and got.summary == "Dentist 10:00"
+
+    assert await store.delete_event("e1") is True
+    assert await store.get_event("e1") is None
+    assert await store.delete_event("e1") is False
+
+
+# ---- Task 3: update_event ----
+
+
+async def test_update_event_applies_only_given_fields(store: PostgresStore) -> None:
+    await store.append_event(_content_event("e2", "doc1", "old"))
+    updated = await store.update_event("e2", summary="new summary", confidence=0.9)
+    assert updated is not None
+    assert updated.summary == "new summary"
+    assert updated.confidence == 0.9
+    # occurred_at left untouched
+    assert updated.occurred_at is not None
+    assert await store.update_event("missing") is None
+
+
+# ---- Task 4: merge_events ----
+
+
+async def test_merge_events_deletes_duplicates_and_records_provenance(
+    store: PostgresStore,
+) -> None:
+    await store.append_event(_content_event("c", "docA", "Team offsite"))
+    d1 = _content_event("d1", "docB", "Team offsite")
+    d1.confidence = 0.95
+    await store.append_event(d1)
+    await store.append_event(_content_event("d2", "docC", "Team offsite"))
+
+    merged = await store.merge_events("c", ["d1", "d2", "c"])  # self-id ignored
+    assert merged is not None
+    assert merged.event_id == "c"
+    assert merged.confidence == 0.95  # max of canonical+dupes
+    assert set(merged.details["merged_from_event_ids"]) == {"d1", "d2"}
+    assert set(merged.details["merged_from_document_ids"]) == {"docB", "docC"}
+    assert await store.get_event("d1") is None
+    assert await store.get_event("d2") is None
+    assert await store.get_event("c") is not None
+    assert await store.merge_events("missing", ["d1"]) is None
