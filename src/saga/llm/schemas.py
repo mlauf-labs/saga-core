@@ -75,13 +75,11 @@ class DocTypeAssignment(BaseModel):
             "should receive this type. Null when reusing an existing type."
         ),
     )
-    emoji: str | None = Field(
-        default=None,
+    emoji: str = Field(
         description=(
-            "Only when is_new is true: a single emoji that visually represents this "
-            "document type, e.g. '📄' for invoice, '📅' for meeting_notes, '📝' for "
-            "contract. Must be exactly one emoji character. Null when reusing an "
-            "existing type."
+            "A single emoji that visually represents this document type, e.g. '📄' for "
+            "invoice, '📅' for meeting_notes, '📝' for contract. Exactly one emoji "
+            "character. Always provide one (it is used when this is a new type)."
         ),
     )
     rationale: str = Field(

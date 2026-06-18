@@ -10,10 +10,15 @@ from fastapi import APIRouter, Query
 from saga.api.dependencies import AuthDep, ServicesDep
 from saga.api.schemas import TimelineResponse
 from saga.core.errors import SagaError
-from saga.core.models import EventCategory, EventType
+from saga.core.models import Event, EventCategory, EventType
 from saga.events import EventQuery
 
 router = APIRouter(tags=["timeline"], dependencies=[AuthDep])
+
+
+async def _document_titles(services: ServicesDep, events: list[Event]) -> dict[str, str]:
+    ids = list({e.document_id for e in events if e.document_id})
+    return await services.db.get_document_titles(ids)
 
 
 def _build_query(
@@ -82,7 +87,12 @@ async def get_timeline(
         expand_recurrences=expand,
     )
     events = await services.timeline.query(query)
-    return TimelineResponse(items=events, limit=query.limit, offset=query.offset)
+    return TimelineResponse(
+        items=events,
+        limit=query.limit,
+        offset=query.offset,
+        documents=await _document_titles(services, events),
+    )
 
 
 @router.get(
@@ -114,7 +124,12 @@ async def get_document_timeline(
         offset=offset,
     )
     events = await services.timeline.query(query)
-    return TimelineResponse(items=events, limit=query.limit, offset=query.offset)
+    return TimelineResponse(
+        items=events,
+        limit=query.limit,
+        offset=query.offset,
+        documents=await _document_titles(services, events),
+    )
 
 
 @router.get(
@@ -149,4 +164,9 @@ async def get_agenda(
         offset=offset,
     )
     events = await services.timeline.query(query)
-    return TimelineResponse(items=events, limit=query.limit, offset=query.offset)
+    return TimelineResponse(
+        items=events,
+        limit=query.limit,
+        offset=query.offset,
+        documents=await _document_titles(services, events),
+    )

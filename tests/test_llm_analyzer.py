@@ -91,7 +91,11 @@ async def test_classify_doc_type_returns_assignment_and_formats_prompt(
 ) -> None:
     recorder = _patch(
         monkeypatch,
-        {"DocTypeAssignment": DocTypeAssignment(doc_type="invoice", rationale="totals")},
+        {
+            "DocTypeAssignment": DocTypeAssignment(
+                doc_type="invoice", emoji="📄", rationale="totals"
+            )
+        },
     )
     result = await _analyzer().classify_doc_type(
         title="inv.pdf",
@@ -114,7 +118,9 @@ async def test_classify_doc_type_returns_assignment_and_formats_prompt(
 async def test_classify_doc_type_handles_no_existing_types(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recorder = _patch(monkeypatch, {"DocTypeAssignment": DocTypeAssignment(doc_type="report")})
+    recorder = _patch(
+        monkeypatch, {"DocTypeAssignment": DocTypeAssignment(doc_type="report", emoji="📄")}
+    )
     await _analyzer().classify_doc_type(title="x", content="y", existing_doc_types=[])
     assert "fresh archive" in recorder.calls[0]["system_prompt"].lower()
 
@@ -165,7 +171,9 @@ async def test_extract_values_uses_json_mode(monkeypatch: pytest.MonkeyPatch) ->
 
 async def test_classify_doc_type_uses_tool_calling_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     """Tool-calling mode is kept for scalar schemas that local models handle reliably."""
-    recorder = _patch(monkeypatch, {"DocTypeAssignment": DocTypeAssignment(doc_type="invoice")})
+    recorder = _patch(
+        monkeypatch, {"DocTypeAssignment": DocTypeAssignment(doc_type="invoice", emoji="📄")}
+    )
     await _analyzer().classify_doc_type(title="x", content="y")
     assert recorder.calls[0]["mode"] == ExtractionMode.TOOL_CALLING
 
@@ -219,7 +227,9 @@ async def test_place_in_folder_respects_allow_auto_create_false(
 async def test_classify_doc_type_truncates_content(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recorder = _patch(monkeypatch, {"DocTypeAssignment": DocTypeAssignment(doc_type="other")})
+    recorder = _patch(
+        monkeypatch, {"DocTypeAssignment": DocTypeAssignment(doc_type="other", emoji="📄")}
+    )
     analyzer = _analyzer(max_input_chars=10)
     await analyzer.classify_doc_type(title="t", content="X" * 500)
     assert len(recorder.calls[0]["text"]) == 10
@@ -234,7 +244,9 @@ async def test_extract_uses_global_model_when_no_step_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     global_model = object()
-    recorder = _patch(monkeypatch, {"DocTypeAssignment": DocTypeAssignment(doc_type="x")})
+    recorder = _patch(
+        monkeypatch, {"DocTypeAssignment": DocTypeAssignment(doc_type="x", emoji="📄")}
+    )
     analyzer = DocumentAnalyzer(cast(Any, global_model), PromptLibrary("prompts"))
     await analyzer.classify_doc_type(title="t", content="c")
     assert recorder.calls[0]["model"] is global_model
@@ -245,7 +257,9 @@ async def test_extract_uses_step_model_when_override_provided(
 ) -> None:
     global_model = object()
     step_model = object()
-    recorder = _patch(monkeypatch, {"DocTypeAssignment": DocTypeAssignment(doc_type="x")})
+    recorder = _patch(
+        monkeypatch, {"DocTypeAssignment": DocTypeAssignment(doc_type="x", emoji="📄")}
+    )
     analyzer = DocumentAnalyzer(
         cast(Any, global_model),
         PromptLibrary("prompts"),

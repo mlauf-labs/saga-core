@@ -50,6 +50,17 @@ async def test_find_by_hash(db: PostgresStore) -> None:
     assert await db.find_by_hash("missing") is None
 
 
+async def test_get_document_titles(db: PostgresStore) -> None:
+    a = await seed_document(db, title="Invoice A")
+    b = await seed_document(db, title="Contract B")
+
+    titles = await db.get_document_titles([a.document_id, b.document_id, "missing"])
+    assert titles == {a.document_id: "Invoice A", b.document_id: "Contract B"}
+
+    # Empty input short-circuits to an empty map.
+    assert await db.get_document_titles([]) == {}
+
+
 async def test_membership_primary_switch_and_fallback(db: PostgresStore) -> None:
     doc = await seed_document(db)
     a = await db.create_folder(name="A")

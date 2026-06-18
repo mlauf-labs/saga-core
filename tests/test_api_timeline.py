@@ -148,6 +148,25 @@ async def test_get_document_timeline_returns_event(
     assert body["items"][0]["event_type"] == "placement"
 
 
+async def test_get_timeline_includes_document_titles(
+    store: PostgresStore,
+    services: Services,
+    auth_headers: dict[str, str],
+) -> None:
+    from tests.conftest import seed_document
+
+    doc = await seed_document(store, title="Invoice 2026")
+    await store.append_event(_audit_event(document_id=doc.document_id))
+
+    app = create_app(services.config, services=services)
+    with TestClient(app) as client:
+        response = client.get(f"/timeline?document_id={doc.document_id}", headers=auth_headers)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["documents"] == {doc.document_id: "Invoice 2026"}
+
+
 async def test_timeline_requires_auth(
     store: PostgresStore,
     services: Services,

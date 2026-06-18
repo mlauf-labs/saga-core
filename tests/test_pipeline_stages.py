@@ -197,7 +197,9 @@ async def test_convert_to_markdown_missing_document_raises(db: PostgresStore) ->
 async def test_classify_doc_type_creates_and_assigns(db: PostgresStore) -> None:
     doc = await seed_document(db, title="inv.pdf")
     analyzer = _FakeAnalyzer(
-        doc_type=DocTypeAssignment(doc_type="invoice", is_new=True, description="a bill")
+        doc_type=DocTypeAssignment(
+            doc_type="invoice", is_new=True, description="a bill", emoji="📄"
+        )
     )
 
     result = await classify_doc_type(
@@ -220,7 +222,7 @@ async def test_classify_doc_type_creates_and_assigns(db: PostgresStore) -> None:
 async def test_classify_doc_type_reuses_existing(db: PostgresStore) -> None:
     doc = await seed_document(db)
     existing = await db.ensure_doc_type(name="contract", description="legal")
-    analyzer = _FakeAnalyzer(doc_type=DocTypeAssignment(doc_type="contract"))
+    analyzer = _FakeAnalyzer(doc_type=DocTypeAssignment(doc_type="contract", emoji="📝"))
 
     result = await classify_doc_type(
         document_id=doc.document_id,
@@ -239,7 +241,9 @@ async def test_classify_doc_type_reuses_existing(db: PostgresStore) -> None:
 
 async def test_classify_doc_type_no_create_when_disabled(db: PostgresStore) -> None:
     doc = await seed_document(db)
-    analyzer = _FakeAnalyzer(doc_type=DocTypeAssignment(doc_type="invoice", is_new=True))
+    analyzer = _FakeAnalyzer(
+        doc_type=DocTypeAssignment(doc_type="invoice", is_new=True, emoji="📄")
+    )
 
     result = await classify_doc_type(
         document_id=doc.document_id,
@@ -621,7 +625,7 @@ async def test_classify_doc_type_emits_reclassification_only_on_change(
 ) -> None:
     doc = await seed_document(db)
     await db.ensure_doc_type(name="invoice", description="a bill")
-    analyzer = _FakeAnalyzer(doc_type=DocTypeAssignment(doc_type="invoice"))
+    analyzer = _FakeAnalyzer(doc_type=DocTypeAssignment(doc_type="invoice", emoji="📄"))
     sink = _RecordingSink()
     recorder = EventRecorder(sink)
 
