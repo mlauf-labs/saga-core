@@ -5,7 +5,8 @@
 > saga-ui, saga-importer). This is a planning doc, not a spec — each remaining Track that says
 > "own spec" goes through the normal brainstorm → spec → plan → implement cycle.
 
-- **Created:** 2026-06-17 · **Last updated:** 2026-06-17 (post merge of PR #8)
+- **Created:** 2026-06-17 · **Last updated:** 2026-06-18 (Track E/H merged; Track I local
+  conformance + timeline-emission test debt landed)
 - **Scope note:** OKF is an **interchange/serialization format at the boundary**, never the
   database storage model. Postgres stays the system of record; OpenSearch stays a rebuildable
   projection; an OKF bundle is a *third* projection (export) and an *import* source.
@@ -46,55 +47,69 @@
 | Frontmatter / format contract (Track D) — `saga_*` keys, `type` fallback, `resource` URI | saga-core | folded into PR #3/#5/#6 · FR-51/53 |
 | saidex 0.3 migration (`extract_data_*` API), `<0.3` pin lifted | saga-core | PR #8 |
 | Requirement IDs for timeline + OKF | docs/requirements | FR-44…56, NFR-36 |
+| **Track E — saga-ui**: Timeline view, document-detail timeline, agenda/"upcoming", folder view (via the BFF generic proxy) | saga-ui | PR #2 · UI |
+| **Track H — saga-backup**: `events` confirmed captured by the whole-DB `pg_dump`; regression test pins it; legacy `export` kept (complementary, documented) | saga-backup | PR #2 |
+| **Track I (local)**: in-repo OKF v0.1 conformance check over a full bundle (`tests/export/test_okf_conformance.py`) | saga-core | NFR-36 |
+| Timeline emission test debt — stage-level "no event on unchanged re-ingest" guards | saga-core | `tests/test_pipeline_stages.py` |
 
 The **core technical arc is complete**: the timeline subsystem and the full OKF export↔import
-round-trip are implemented, tested, and merged to `develop`.
+round-trip are implemented, tested, merged to `develop`, **and surfaced in the UI**.
 
 ---
 
 ## 3. Remaining work
 
-### Track E — saga-ui (frontend + BFF)  — *not started; biggest remaining piece*
+### Track E — saga-ui (frontend + BFF)  — ✅ **done (saga-ui PR #2)**
 
-Make the backend capability user-visible. Needs its own brainstorm → spec → plan.
+- [x] **Timeline view** consuming `GET /timeline` (audit ↔ content toggle = `category`).
+- [x] **Document detail** timeline (`GET /documents/{id}/timeline`).
+- [x] **Agenda / "upcoming" view** consuming `GET /agenda`.
+- [x] **Folder view**: `index.md`-style overview + per-folder log.
+- [x] BFF: the **generic `/api/{path}` proxy** forwards the new saga-core endpoints with no
+      BFF change; auth is the existing session gate. (Export/import UI not surfaced — see below.)
+- [ ] **Export / import from the UI** — deferred. The BFF can proxy `GET /export/okf` /
+      `POST /import/okf`; decide later whether to add a UI affordance.
 
-- [ ] **Timeline view** consuming `GET /timeline` (audit ↔ content toggle = `category`).
-- [ ] **Document detail** timeline (`GET /documents/{id}/timeline`).
-- [ ] **Agenda / "upcoming" view** consuming `GET /agenda`.
-- [ ] **Folder view**: `index.md`-style overview + per-folder log.
-- [ ] **Export / import from the UI?** The BFF can now proxy `GET /export/okf` and
-      `POST /import/okf` (both are saga-core REST). Decide whether to surface them.
-- [ ] BFF auth/permissions for the new surfaces.
+### Track H — saga-backup / restore interplay — ✅ **done (saga-backup PR #2)**
 
-### Track H — saga-backup / restore interplay
-
-- [ ] **Verify** the `events` table is included in the `pg_dump` archive and survives
-      `restore` (whole-DB dump → expected yes; add an explicit verify check).
-- [ ] **Decide** the fate of saga-backup's legacy `export` command now that OKF export lives
-      in saga-core (keep, deprecate, or remove). The binary `archive`/`restore` path stays.
-- [ ] saga-backup `export.py` SQL: confirm it doesn't break against the newer schema (the
-      `events` table is a new dependency surface).
+- [x] **Verified** the `events` table is captured by the whole-DB `pg_dump` and restored by
+      `pg_restore`; a regression test (`tests/test_archive.py`) pins the dump as whole-DB so a
+      later table filter can't silently drop it.
+- [x] **Decision: keep** saga-backup's `export` command. It is *complementary* to OKF export —
+      the binary `archive`/`restore` + folder `export` remain the canonical backup path (direct
+      DB/MinIO, no re-analysis on restore); OKF export is the interchange projection. Documented
+      in `saga-backup/README.md`.
+- [x] saga-backup `export.py` SQL confirmed in sync with the current schema; `events` is
+      additive and does not touch its queries.
 
 ### Track I — interop / conformance / ecosystem
 
-- [ ] Validate exported bundles **conform to OKF v0.1** (NFR-36) with an external/automated
-      check, not just our own tests.
-- [ ] Test consumption by Google's static HTML graph visualizer and (aspirationally) the
-      BigQuery Knowledge Catalog ingestion — ideally on the test server (10.0.0.220).
+- [x] **Local OKF v0.1 conformance** (NFR-36): in-repo check over a full bundle — concept
+      frontmatter (`type` required, `title`, `tags` list), reserved `index.md`/`log.md` carry no
+      frontmatter, and the only non-markdown files are the ignorable machine extras
+      (`tests/export/test_okf_conformance.py`).
+- [ ] **External** consumption check — Google's static HTML graph visualizer and (aspirationally)
+      the BigQuery Knowledge Catalog ingestion — on the test server (10.0.0.220). *Needs the
+      running stack + a human to drive the external tools; flagged for the owner.*
 - [ ] License/attribution for emitting OKF; track upstream spec changes (v0.1 is young).
 
 ### Deferred / smaller items (acceptable as-is for now)
 
 - [ ] **Lossless foreign round-trip:** `Document` has no free-form metadata bag, so unknown
       (non-`saga_*`, non-standard) frontmatter keys are dropped on foreign import. A
-      `Document.metadata` dict would close this (round-trip spec §11).
+      `Document.metadata` dict would close this (round-trip spec §11). *Next feature candidate;
+      needs its own brainstorm (schema migration + import/export wiring).*
 - [ ] **Streaming importer** for very large bundles (v1 extracts to a temp dir / reads into
       memory).
-- [ ] **Timeline test debt:** stage-level "same doc-type → no reclassification event" test;
-      decide whether `doc_ingested` (emitted before ingestion success) should move to success;
-      decide whether `actor` should be a constrained enum vs free-form string.
-- [ ] **Docs:** update saga-core docs, `saga-backup/README`, and the workspace root README to
-      describe the OKF capability + a user-facing how-to.
+- [x] **Timeline test debt — resolved.** Stage-level guards now have tests: `classify_doc_type`
+      emits a reclassification only when the doc-type changes, and `place_in_folder` emits a
+      placement only when the folder set changes (idempotent re-ingest stays silent). **`actor`
+      stays a free-form string** (audit `pipeline`/`system`, content `llm`; no value in an enum
+      that an importer would have to round-trip). **`doc_ingested` stays where it is** — it
+      records the *attempt*; ingestion failures surface via document status, not by withholding
+      the event.
+- [ ] **Docs:** update saga-core docs and the workspace root README to describe the OKF
+      capability + a user-facing how-to. (`saga-backup/README` done in PR #2.)
 
 ### Optional — saidex upstream (separate repo)
 
@@ -112,9 +127,12 @@ Make the backend capability user-visible. Needs its own brainstorm → spec → 
 
 ## 4. Recommended next sequencing
 
-1. **Track E (saga-ui)** — highest user-visible value; surfaces timeline, agenda, and folder
-   views (and optionally export/import) that the backend already supports.
-2. **Track H** — quick verify (events in `pg_dump`) + the saga-backup `export` retire/keep
-   decision.
-3. **Track I** — external OKF conformance validation once a bundle is demoed end-to-end.
-4. Deferred items + the saidex upstream as they become relevant.
+Tracks E, H, and the local half of I are now done. What remains:
+
+1. **`Document.metadata` bag** — the one functional gap (lossless foreign round-trip). Needs a
+   brainstorm (schema migration + import/export wiring) before implementation.
+2. **Docs sweep** — saga-core docs + workspace root README describe the OKF capability + how-to.
+3. **Track I (external)** — OKF v0.1 consumption by Google's visualizer / BigQuery on the test
+   server; owner-driven (needs the running stack + the external tools).
+4. Deferred items (streaming importer) + the **saidex** upstream RRULE validator as they
+   become relevant. *(saidex is not yet released — held.)*
