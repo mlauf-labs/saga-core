@@ -201,6 +201,7 @@ def build_document_filters(
     created_from: str | None = None,
     created_to: str | None = None,
     extracted_values: dict[str, str] | None = None,
+    metadata: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Build filter clauses for the document projection (keyword + nested, FR-20)."""
     filters: list[dict[str, Any]] = []
@@ -225,6 +226,22 @@ def build_document_filters(
                             "filter": [
                                 {"term": {"extracted_values.key": key}},
                                 {"term": {"extracted_values.value.keyword": value}},
+                            ]
+                        }
+                    },
+                }
+            }
+        )
+    for key, value in (metadata or {}).items():
+        filters.append(
+            {
+                "nested": {
+                    "path": "metadata",
+                    "query": {
+                        "bool": {
+                            "filter": [
+                                {"term": {"metadata.key": key}},
+                                {"term": {"metadata.value.keyword": value}},
                             ]
                         }
                     },
@@ -260,6 +277,12 @@ def build_document_search_body(
                 "nested": {
                     "path": "extracted_values",
                     "query": {"match": {"extracted_values.value": query}},
+                }
+            },
+            {
+                "nested": {
+                    "path": "metadata",
+                    "query": {"match": {"metadata.value": query}},
                 }
             },
         ]
