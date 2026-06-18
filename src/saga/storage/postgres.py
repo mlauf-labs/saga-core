@@ -1209,6 +1209,75 @@ class PostgresStore:
                     )
                 )
 
+    async def get_event(self, event_id: str) -> Event | None:
+        async with self._sessions()() as session:
+            row = (
+                await session.execute(select(EventRow).where(EventRow.id == event_id))
+            ).scalar_one_or_none()
+        return _to_event(row) if row is not None else None
+
+    async def delete_event(self, event_id: str) -> bool:
+        async with self._sessions()() as session, session.begin():
+            result = await session.execute(delete(EventRow).where(EventRow.id == event_id))
+        return bool(cast("CursorResult[Any]", result).rowcount)
+
+    async def update_event(
+        self,
+        event_id: str,
+        *,
+        summary: str | None = None,
+        occurred_at: datetime | None = None,
+        confidence: float | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> Event | None:
+        async with self._sessions()() as session, session.begin():
+            row = (
+                await session.execute(select(EventRow).where(EventRow.id == event_id))
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            if summary is not None:
+                row.summary = summary
+            if occurred_at is not None:
+                row.occurred_at = occurred_at
+            if confidence is not None:
+                row.confidence = confidence
+            if details is not None:
+                row.details = dict(details)
+            await session.flush()
+            return _to_event(row)
+
+    async def merge_events(
+        self, canonical_id: str, duplicate_ids: Sequence[str]
+    ) -> Event | None:
+        dup_ids = [d for d in dict.fromkeys(duplicate_ids) if d != canonical_id]
+        async with self._sessions()() as session, session.begin():
+            canonical = (
+                await session.execute(select(EventRow).where(EventRow.id == canonical_id))
+            ).scalar_one_or_none()
+            if canonical is None:
+                return None
+            dups = (
+                (await session.execute(select(EventRow).where(EventRow.id.in_(dup_ids))))
+                .scalars()
+                .all()
+                if dup_ids
+                else []
+            )
+            confidences = [c for c in (canonical.confidence, *(d.confidence for d in dups)) if c is not None]
+            if confidences:
+                canonical.confidence = max(confidences)
+            details = dict(canonical.details or {})
+            details["merged_from_event_ids"] = sorted({d.id for d in dups})
+            details["merged_from_document_ids"] = sorted(
+                {d.document_id for d in dups if d.document_id is not None}
+            )
+            canonical.details = details
+            if dups:
+                await session.execute(delete(EventRow).where(EventRow.id.in_([d.id for d in dups])))
+            await session.flush()
+            return _to_event(canonical)
+
     async def document_ids_in_folders(self, folder_ids: Sequence[str]) -> list[str]:
         """Return ids of documents that are members of any of *folder_ids* (no subtree)."""
         if not folder_ids:
