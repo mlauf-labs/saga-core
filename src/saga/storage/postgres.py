@@ -138,6 +138,9 @@ class DocumentRow(Base):
     extracted_values: Mapped[list[dict[str, Any]]] = mapped_column(
         _JSON, default=list, nullable=False
     )
+    document_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", _JSON, default=dict, nullable=False
+    )
     content_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -673,6 +676,7 @@ class PostgresStore:
                 doc_type_id=document.doc_type_id,
                 summary=document.summary,
                 extracted_values=[v.model_dump(mode="json") for v in document.extracted_values],
+                document_metadata=dict(document.metadata),
                 content_markdown=document.content_markdown,
                 created_at=document.created_at,
                 updated_at=document.updated_at,
@@ -786,6 +790,7 @@ class PostgresStore:
         doc_type_id: str | None = None,
         clear_doc_type: bool = False,
         extracted_values: list[ExtractedValue] | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> Document:
         async with self._sessions()() as session, session.begin():
             row = await session.get(DocumentRow, document_id)
@@ -803,6 +808,8 @@ class PostgresStore:
                 row.doc_type_id = doc_type_id
             if extracted_values is not None:
                 row.extracted_values = [v.model_dump(mode="json") for v in extracted_values]
+            if metadata is not None:
+                row.document_metadata = dict(metadata)
             row.updated_at = _now()
             await session.flush()
             return await self._load_document(session, row)
@@ -1280,6 +1287,7 @@ class PostgresStore:
             doc_type_id=row.doc_type_id,
             summary=row.summary,
             extracted_values=[ExtractedValue.model_validate(v) for v in row.extracted_values],
+            metadata=dict(row.document_metadata or {}),
             folders=folders,
             notes=notes,
             created_at=_aware(row.created_at),
