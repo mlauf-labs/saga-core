@@ -224,6 +224,17 @@ def build_server(
             "total": total,
         }
 
+    async def get_store_guidance() -> dict[str, str]:
+        g = config.generation
+        return {
+            "store_description": g.description,
+            "doctype_instructions": g.prompt_doctype,
+            "metadata_instructions": g.prompt_metadata,
+            "summary_instructions": g.prompt_summary,
+            "folder_instructions": g.prompt_folder,
+            "language": g.language,
+        }
+
     async def list_doc_types() -> list[dict[str, Any]]:
         return [dt.model_dump(mode="json") for dt in await services.db.list_doc_types()]
 
@@ -564,6 +575,7 @@ def build_server(
         get_folder_tree,
         get_folder,
         list_documents_in_folder,
+        get_store_guidance,
         list_doc_types,
         get_timeline,
         get_agenda,
