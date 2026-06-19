@@ -48,9 +48,7 @@ class FakeStore:
         self.events[event_id] = Event(**data)
         return self.events[event_id]
 
-    async def merge_events(
-        self, canonical_id: str, duplicate_ids: Sequence[str]
-    ) -> Event | None:
+    async def merge_events(self, canonical_id: str, duplicate_ids: Sequence[str]) -> Event | None:
         if canonical_id not in self.events:
             return None
         for d in duplicate_ids:
