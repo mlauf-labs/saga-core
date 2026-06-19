@@ -25,7 +25,9 @@ class EventMutationStore(Protocol):
     async def update_event(self, event_id: str, *, summary: str | None = ...,
                            occurred_at: datetime | None = ..., confidence: float | None = ...,
                            details: dict[str, Any] | None = ...) -> Event | None: ...
-    async def merge_events(self, canonical_id: str, duplicate_ids: Sequence[str]) -> Event | None: ...
+    async def merge_events(
+        self, canonical_id: str, duplicate_ids: Sequence[str]
+    ) -> Event | None: ...
 
 
 class EventSink(Protocol):
@@ -51,7 +53,8 @@ async def delete_event(store: EventMutationStore, sink: EventSink, event_id: str
         raise NotFoundError(f"Event '{event_id}' was not found; nothing to delete.")
     await store.delete_event(event_id)
     await _record(sink, actor=actor, summary=f"Deleted event {event_id}",
-                  document_id=existing.document_id, details={"action": "delete", "event_id": event_id})
+                  document_id=existing.document_id,
+                  details={"action": "delete", "event_id": event_id})
 
 
 async def update_event(store: EventMutationStore, sink: EventSink, event_id: str, *,
@@ -63,7 +66,8 @@ async def update_event(store: EventMutationStore, sink: EventSink, event_id: str
     if updated is None:
         raise NotFoundError(f"Event '{event_id}' was not found; nothing to update.")
     await _record(sink, actor=actor, summary=f"Updated event {event_id}",
-                  document_id=updated.document_id, details={"action": "update", "event_id": event_id})
+                  document_id=updated.document_id,
+                  details={"action": "update", "event_id": event_id})
     return updated
 
 
