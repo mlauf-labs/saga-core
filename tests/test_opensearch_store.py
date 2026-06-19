@@ -53,9 +53,20 @@ def _make_document() -> Document:
 
 
 def _compatible_mapping(index: str, **_: Any) -> dict[str, Any]:
-    """Return a mapping where the required kNN fields are correctly typed."""
-    field = "embedding" if "chunk" in index else "summary_embedding"
-    return {index: {"mappings": {"properties": {field: {"type": "knn_vector"}}}}}
+    """Return a mapping where the required kNN (and nested) fields are correctly typed."""
+    if "chunk" in index:
+        return {index: {"mappings": {"properties": {"embedding": {"type": "knn_vector"}}}}}
+    return {
+        index: {
+            "mappings": {
+                "properties": {
+                    "summary_embedding": {"type": "knn_vector"},
+                    "metadata": {"type": "nested"},
+                    "extracted_values": {"type": "nested"},
+                }
+            }
+        }
+    }
 
 
 @pytest.fixture
@@ -144,6 +155,36 @@ async def test_bootstrap_recreates_index_missing_knn_field(
     fake_client.indices.get_mapping = AsyncMock(side_effect=_mapping)
     await store.bootstrap()
     # The incompatible documents index is dropped and recreated; the chunk index is kept.
+    fake_client.indices.delete.assert_awaited_once()
+    assert fake_client.indices.delete.await_args.kwargs["index"] == store._config.document_index
+    fake_client.indices.create.assert_awaited_once()
+    assert fake_client.indices.create.await_args.kwargs["index"] == store._config.document_index
+
+
+async def test_bootstrap_recreates_index_with_non_nested_metadata(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    # The documents index exists with a correct kNN field but a STALE metadata mapping
+    # (metadata absent / not nested) — the real test-server drift that broke keyword search.
+    fake_client.indices.exists = AsyncMock(return_value=True)
+
+    def _mapping(index: str, **_: Any) -> dict[str, Any]:
+        if index == store._config.document_index:
+            return {
+                index: {
+                    "mappings": {
+                        "properties": {
+                            "summary_embedding": {"type": "knn_vector"},
+                            "extracted_values": {"type": "nested"},
+                            # metadata absent → must trigger a recreate
+                        }
+                    }
+                }
+            }
+        return _compatible_mapping(index)
+
+    fake_client.indices.get_mapping = AsyncMock(side_effect=_mapping)
+    await store.bootstrap()
     fake_client.indices.delete.assert_awaited_once()
     assert fake_client.indices.delete.await_args.kwargs["index"] == store._config.document_index
     fake_client.indices.create.assert_awaited_once()

@@ -87,16 +87,18 @@ class OpenSearchStore:
     async def bootstrap(self) -> None:
         """Create both projection indices, repairing an incompatible existing mapping.
 
-        OpenSearch is a rebuildable projection, so if an existing index is missing a
-        required ``knn_vector`` field (e.g. a stale ``documents`` index created before
-        ``summary_embedding`` existed), the index is dropped and recreated with the
-        current mapping. The projection must then be rebuilt from Postgres on the next
+        OpenSearch is a rebuildable projection, so if an existing index has a stale
+        mapping — a required ``knn_vector`` field missing (e.g. an index created before
+        ``summary_embedding`` existed), or a field that must be ``nested`` (``metadata``,
+        ``extracted_values``) not mapped as such — the index is dropped and recreated with
+        the current mapping. The projection must then be rebuilt from Postgres on the next
         ingest/update; the SoR is unaffected.
         """
         await self._ensure_index(
             self._config.document_index,
             document_index_body(self._config),
             knn_fields=("summary_embedding",),
+            nested_fields=("metadata", "extracted_values"),
         )
         await self._ensure_index(
             self._config.chunk_index,
@@ -105,14 +107,19 @@ class OpenSearchStore:
         )
 
     async def _ensure_index(
-        self, name: str, body: dict[str, Any], *, knn_fields: tuple[str, ...] = ()
+        self,
+        name: str,
+        body: dict[str, Any],
+        *,
+        knn_fields: tuple[str, ...] = (),
+        nested_fields: tuple[str, ...] = (),
     ) -> None:
         try:
             if not await self.client.indices.exists(index=name):
                 await self.client.indices.create(index=name, body=body)
                 _log.info("index_created", index=name)
                 return
-            missing = await self._incompatible_knn_fields(name, knn_fields)
+            missing = await self._incompatible_fields(name, knn_fields, nested_fields)
             if missing:
                 _log.warning("index_mapping_incompatible_recreating", index=name, fields=missing)
                 await self.client.indices.delete(index=name)
@@ -123,15 +130,22 @@ class OpenSearchStore:
         except Exception as exc:
             raise StorageError(f"Failed to create OpenSearch index '{name}': {exc}") from exc
 
-    async def _incompatible_knn_fields(self, name: str, knn_fields: tuple[str, ...]) -> list[str]:
-        """Return required kNN fields that are absent or not ``knn_vector`` on ``name``."""
-        if not knn_fields:
+    async def _incompatible_fields(
+        self, name: str, knn_fields: tuple[str, ...], nested_fields: tuple[str, ...]
+    ) -> list[str]:
+        """Return required fields whose live mapping type is wrong (or absent).
+
+        A kNN field must be ``knn_vector``; a nested field must be ``nested``. A field
+        absent from the live mapping counts as incompatible — that is the stale-index
+        case (e.g. ``metadata`` created before it became a nested field).
+        """
+        if not knn_fields and not nested_fields:
             return []
         mapping = await self.client.indices.get_mapping(index=name)
         properties: dict[str, Any] = mapping.get(name, {}).get("mappings", {}).get("properties", {})
-        return [
-            field for field in knn_fields if properties.get(field, {}).get("type") != "knn_vector"
-        ]
+        bad = [f for f in knn_fields if properties.get(f, {}).get("type") != "knn_vector"]
+        bad += [f for f in nested_fields if properties.get(f, {}).get("type") != "nested"]
+        return bad
 
     async def project_document(
         self,
