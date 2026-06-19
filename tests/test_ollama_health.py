@@ -122,6 +122,45 @@ def test_collect_skips_non_ollama_sections() -> None:
     assert collect_required_ollama_models(None, None) == set()
 
 
+def _converters_config(
+    *, vlm_enabled: bool = True, vlm_mode: str = "api", vlm_model: str = "qwen2.5vl:7b"
+) -> Any:
+    from saga.converters.config import ConvertersConfig, ServiceConfig, VlmConfig
+    from saga.converters.router import RoutingConfig
+
+    return ConvertersConfig(
+        services={
+            "docling": ServiceConfig(
+                base_url="http://docling:5001",
+                vlm=VlmConfig(enabled=vlm_enabled, mode=vlm_mode, model=vlm_model),
+            )
+        },
+        routing=RoutingConfig(default="docling"),
+    )
+
+
+def test_collect_includes_docling_vlm_when_api_mode() -> None:
+    conv = _converters_config(vlm_enabled=True, vlm_mode="api", vlm_model="qwen2.5vl:7b")
+    models = collect_required_ollama_models(_llm_config(), _emb_config(), conv)
+    assert "qwen2.5vl:7b" in models
+
+
+def test_collect_excludes_docling_vlm_when_disabled_or_not_api() -> None:
+    disabled = _converters_config(vlm_enabled=False)
+    assert "qwen2.5vl:7b" not in collect_required_ollama_models(
+        _llm_config(), _emb_config(), disabled
+    )
+    preset = _converters_config(vlm_enabled=True, vlm_mode="preset")
+    assert "qwen2.5vl:7b" not in collect_required_ollama_models(
+        _llm_config(), _emb_config(), preset
+    )
+    # converters_config defaults to None → unchanged behaviour.
+    assert collect_required_ollama_models(_llm_config(), _emb_config()) == {
+        "llama3.1:8b",
+        "nomic-embed-text",
+    }
+
+
 # ---------------------------------------------------------------------------
 # resolve_check_urls
 # ---------------------------------------------------------------------------

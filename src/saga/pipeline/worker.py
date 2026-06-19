@@ -79,7 +79,8 @@ async def on_startup(ctx: dict[str, Any]) -> None:
     opensearch = OpenSearchStore(config.opensearch)
     db = PostgresStore(config.postgres)
     minio = MinioStore(config.minio)
-    converters = ConverterRegistry(load_converters_config())
+    converters_config = load_converters_config()
+    converters = ConverterRegistry(converters_config)
     llm_config = load_llm_config()
     embeddings_config = load_embeddings_config()
     # Verify (and pull) the required models on every Ollama server before any
@@ -91,7 +92,7 @@ async def on_startup(ctx: dict[str, Any]) -> None:
         if check_urls:
             await ensure_ollama_models(
                 check_urls,
-                collect_required_ollama_models(llm_config, embeddings_config),
+                collect_required_ollama_models(llm_config, embeddings_config, converters_config),
                 pull_missing=ollama_runtime.pull_missing_models,
                 connect_timeout=ollama_runtime.connect_timeout,
             )
