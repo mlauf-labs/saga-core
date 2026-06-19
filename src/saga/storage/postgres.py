@@ -1247,9 +1247,7 @@ class PostgresStore:
             await session.flush()
             return _to_event(row)
 
-    async def merge_events(
-        self, canonical_id: str, duplicate_ids: Sequence[str]
-    ) -> Event | None:
+    async def merge_events(self, canonical_id: str, duplicate_ids: Sequence[str]) -> Event | None:
         dup_ids = [d for d in dict.fromkeys(duplicate_ids) if d != canonical_id]
         async with self._sessions()() as session, session.begin():
             canonical = (
