@@ -1264,7 +1264,9 @@ class PostgresStore:
                 if dup_ids
                 else []
             )
-            confidences = [c for c in (canonical.confidence, *(d.confidence for d in dups)) if c is not None]
+            confidences = [
+                c for c in (canonical.confidence, *(d.confidence for d in dups)) if c is not None
+            ]
             if confidences:
                 canonical.confidence = max(confidences)
             details = dict(canonical.details or {})
