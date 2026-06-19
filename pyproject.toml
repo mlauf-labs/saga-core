@@ -55,6 +55,7 @@ saga-mcp = "saga.mcp.__main__:main"
 saga-backup = "saga.scripts.backup:main"
 saga-export-okf = "saga.scripts.export_okf:main"
 saga-import-okf = "saga.scripts.import_okf:main"
+saga-reproject = "saga.scripts.reproject:main"
 
 [dependency-groups]
 dev = [
