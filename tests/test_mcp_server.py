@@ -60,6 +60,7 @@ ALL_TOOL_NAMES = {
     "merge_events",
     "delete_event",
     "update_event",
+    "get_store_guidance",
 }
 
 
