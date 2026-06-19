@@ -22,6 +22,7 @@ from saga.llm.config import PIPELINE_STEPS
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from saga.converters.config import ConvertersConfig
     from saga.embeddings.config import EmbeddingsConfig
     from saga.llm.config import LlmConfig
     from saga.ollama.config import OllamaRuntimeConfig
@@ -62,12 +63,17 @@ def resolve_check_urls(
 
 
 def collect_required_ollama_models(
-    llm_config: LlmConfig | None, embeddings_config: EmbeddingsConfig | None
+    llm_config: LlmConfig | None,
+    embeddings_config: EmbeddingsConfig | None,
+    converters_config: ConvertersConfig | None = None,
 ) -> set[str]:
     """All model names that must exist on every Ollama server, from config.
 
     Only sections whose ``provider`` is ``ollama`` contribute; OpenAI/Azure
-    deployments are not Ollama models.
+    deployments are not Ollama models. A conversion service's **VLM model** is
+    included when its VLM uses the ``api`` mode (Docling sends page images to the
+    Ollama fleet) — otherwise the model would be missing and PDF conversion would
+    fail at upload time.
     """
     models: set[str] = set()
     if llm_config is not None and llm_config.provider == "ollama":
@@ -88,6 +94,11 @@ def collect_required_ollama_models(
         emb_settings = embeddings_config.providers.get("ollama")
         if emb_settings is not None and emb_settings.model:
             models.add(emb_settings.model)
+    if converters_config is not None:
+        for service in converters_config.services.values():
+            vlm = service.vlm
+            if vlm.enabled and vlm.mode == "api" and vlm.model:
+                models.add(vlm.model)
     return models
 
 
