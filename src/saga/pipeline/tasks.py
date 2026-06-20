@@ -256,8 +256,9 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
                 embedder=embedder,
             )
 
-        PIPELINE_DURATION.observe(time.perf_counter() - _run_start)
-        await record_ingest_result(ctx["redis"], "success")
+        with contextlib.suppress(Exception):
+            PIPELINE_DURATION.observe(time.perf_counter() - _run_start)
+            await record_ingest_result(ctx["redis"], "success")
         _log.info("ingest_complete", document_id=document_id)
     except SagaError as exc:
         await db.update_status(document_id, DocumentStatus.FAILED, error=str(exc))

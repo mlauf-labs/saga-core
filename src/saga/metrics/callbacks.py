@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING, Any
 
 from langchain_core.callbacks import AsyncCallbackHandler
 
 from saga.metrics.redis_aggregate import record_tokens
-from saga.metrics.registry import LLM_COST, LLM_TOKENS
+from saga.metrics.registry import LLM_CALL_DURATION, LLM_COST, LLM_TOKENS
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -45,6 +46,7 @@ class PrometheusTokenCallback(AsyncCallbackHandler):
         self._redis = redis
         self._prices = prices or {}
         self._models: dict[UUID, str] = {}
+        self._starts: dict[UUID, float] = {}
 
     def _model_from(self, serialized: dict[str, Any] | None, kwargs: dict[str, Any]) -> str:
         ser = serialized or {}
@@ -67,6 +69,7 @@ class PrometheusTokenCallback(AsyncCallbackHandler):
         **kwargs: Any,  # noqa: ANN401
     ) -> None:
         self._models[run_id] = self._model_from(serialized, kwargs)
+        self._starts[run_id] = time.perf_counter()
 
     async def on_chat_model_start(
         self,
@@ -77,9 +80,16 @@ class PrometheusTokenCallback(AsyncCallbackHandler):
         **kwargs: Any,  # noqa: ANN401
     ) -> None:
         self._models[run_id] = self._model_from(serialized, kwargs)
+        self._starts[run_id] = time.perf_counter()
 
     async def on_llm_end(self, response: Any, *, run_id: UUID, **kwargs: Any) -> None:  # noqa: ANN401
         model = self._models.pop(run_id, _UNKNOWN)
+        start = self._starts.pop(run_id, None)
+        try:
+            if start is not None:
+                LLM_CALL_DURATION.labels(model=model).observe(time.perf_counter() - start)
+        except Exception:  # never break on metrics errors
+            pass
         prompt, completion = _extract_usage(response)
         if not prompt and not completion:
             return

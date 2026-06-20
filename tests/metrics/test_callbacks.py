@@ -28,3 +28,21 @@ async def test_callback_records_tokens_and_cost() -> None:
     assert 'saga_llm_tokens_total{kind="prompt",model="m",step="summarize"} 1000.0' in text
     # cost = 1000/1000*1.0 + 500/1000*2.0 = 2.0
     assert 'saga_llm_cost_usd_total{model="m"} 2.0' in text
+    # LLM call duration histogram must have been observed at least once for model "m".
+    assert 'saga_llm_call_duration_seconds_count{model="m"} 1.0' in text
+
+
+async def test_callback_records_duration_via_chat_model_start() -> None:
+    """on_chat_model_start also sets a start time that is observed on on_llm_end."""
+    r = fakeredis.aioredis.FakeRedis()
+    cb = PrometheusTokenCallback("classify", r)
+    run_id = uuid4()
+    await cb.on_chat_model_start({}, [], run_id=run_id, invocation_params={"model": "chat-model"})
+    gen = SimpleNamespace(
+        message=SimpleNamespace(usage_metadata={"input_tokens": 10, "output_tokens": 5})
+    )
+    result = SimpleNamespace(generations=[[gen]], llm_output=None)
+    await cb.on_llm_end(result, run_id=run_id)
+
+    text = generate_latest(SAGA_REGISTRY).decode()
+    assert 'saga_llm_call_duration_seconds_count{model="chat-model"}' in text

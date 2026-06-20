@@ -196,7 +196,8 @@ def create_app(config: AppConfig | None = None, services: Services | None = None
     app.include_router(llm.router)
     app.include_router(timeline.router)
     app.include_router(stats.router)
-    app.include_router(stats.metrics_router)
+    if cfg.metrics.enabled:
+        app.include_router(stats.metrics_router)
 
     @app.get("/health", tags=["system"])
     async def health() -> dict[str, Any]:
