@@ -21,7 +21,10 @@ def client() -> TestClient:
         queue=AsyncMock(), search=AsyncMock(),
     )
     app = create_app(config=cfg, services=services)
-    snap = Snapshot(counts=ArchiveCounts(documents_total=2), storage=StorageSnapshot(postgres_bytes=10))
+    snap = Snapshot(
+        counts=ArchiveCounts(documents_total=2),
+        storage=StorageSnapshot(postgres_bytes=10),
+    )
     # Set state directly — no lifespan runs when not used as context manager.
     app.state.services = services
     app.state.snapshot = AsyncMock()
