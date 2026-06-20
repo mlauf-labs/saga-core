@@ -95,6 +95,9 @@ services:
     restart: unless-stopped
 
   worker:
+    # /metrics is served on port 9000 (metrics.worker_port) at startup.
+    # Prometheus scrapes it at http://worker:9000/metrics on the internal network —
+    # no host port mapping is required.
     build:
       context: .
       dockerfile: docker/Dockerfile
