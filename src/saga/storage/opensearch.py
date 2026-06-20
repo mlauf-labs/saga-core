@@ -322,6 +322,18 @@ class OpenSearchStore:
             raise StorageError(f"Lexical similarity search failed: {exc}") from exc
         return [_hit_to_similar(hit) for hit in response["hits"]["hits"]]
 
+    async def index_stats(self) -> dict[str, dict[str, int]]:
+        """Per-index document count and primary store size in bytes."""
+        result = await self.client.indices.stats(metric="docs,store")
+        out: dict[str, dict[str, int]] = {}
+        for name, body in (result.get("indices") or {}).items():
+            primaries = body.get("primaries", {})
+            out[name] = {
+                "docs": int(primaries.get("docs", {}).get("count", 0)),
+                "size_bytes": int(primaries.get("store", {}).get("size_in_bytes", 0)),
+            }
+        return out
+
     async def close(self) -> None:
         """Close the underlying client connection."""
         if self._client is not None:
