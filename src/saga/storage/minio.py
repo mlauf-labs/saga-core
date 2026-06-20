@@ -94,3 +94,16 @@ class MinioStore:
             raise StorageError(
                 f"Failed to delete object '{object_name}' from MinIO: {exc}"
             ) from exc
+
+    async def bucket_stats(self) -> dict[str, int]:
+        """Object count and total size in bytes for the configured bucket."""
+
+        def _scan() -> dict[str, int]:
+            objects = 0
+            size = 0
+            for obj in self.client.list_objects(self.bucket, recursive=True):
+                objects += 1
+                size += int(obj.size or 0)
+            return {"objects": objects, "size_bytes": size}
+
+        return await asyncio.to_thread(_scan)

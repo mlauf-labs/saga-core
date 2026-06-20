@@ -17,12 +17,16 @@ every stage is captured in the trace.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import time
 from typing import TYPE_CHECKING, Any
 
 from saga.core.errors import NotFoundError, SagaError
 from saga.core.logging import bind_correlation_id, get_logger
 from saga.core.models import DocumentStatus
 from saga.llm.tracing import build_pipeline_tracer, noop_tracer
+from saga.metrics.pipeline import instrumented_stage, record_ingest_result
+from saga.metrics.registry import PIPELINE_DURATION
 from saga.pipeline.locks import folder_placement_lock
 from saga.pipeline.stages import (
     classify_doc_type,
@@ -80,12 +84,16 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
         # Build the real tracer once we have the document title — this creates
         # exactly one Langfuse root trace for the entire pipeline run.
         tracer = build_pipeline_tracer(config.langfuse, document_id=document_id, title=title)
+        _run_start = time.perf_counter()
 
         # ------------------------------------------------------------------
         # Stage 1: convert to markdown
         # ------------------------------------------------------------------
-        with tracer.step_span(
-            "convert_to_markdown",
+        async with instrumented_stage(
+            tracer,
+            ctx["redis"],
+            "convert",
+            prices=config.metrics.prices,
             input={"document_id": document_id, "filename": filename},
         ):
             await db.update_status(document_id, DocumentStatus.CONVERTING)
@@ -96,8 +104,11 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
         # ------------------------------------------------------------------
         # Stage 2: classify document type
         # ------------------------------------------------------------------
-        with tracer.step_span(
+        async with instrumented_stage(
+            tracer,
+            ctx["redis"],
             "classify_doc_type",
+            prices=config.metrics.prices,
             input={"document_id": document_id, "title": title},
         ) as callbacks:
             await db.update_status(document_id, DocumentStatus.CLASSIFYING_TYPE)
@@ -117,8 +128,11 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
         # ------------------------------------------------------------------
         # Stage 3: extract field values
         # ------------------------------------------------------------------
-        with tracer.step_span(
+        async with instrumented_stage(
+            tracer,
+            ctx["redis"],
             "extract_values",
+            prices=config.metrics.prices,
             input={"document_id": document_id, "doc_type": doc_type_name},
         ) as callbacks:
             await db.update_status(document_id, DocumentStatus.ANALYZING)
@@ -133,8 +147,11 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
         # ------------------------------------------------------------------
         # Stage 3b: extract content/timeline events (dates, appointments, recurring)
         # ------------------------------------------------------------------
-        with tracer.step_span(
+        async with instrumented_stage(
+            tracer,
+            ctx["redis"],
             "extract_timeline",
+            prices=config.metrics.prices,
             input={"document_id": document_id},
         ) as callbacks:
             await extract_timeline(
@@ -149,8 +166,11 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
         # ------------------------------------------------------------------
         # Stage 4: summarise and embed
         # ------------------------------------------------------------------
-        with tracer.step_span(
+        async with instrumented_stage(
+            tracer,
+            ctx["redis"],
             "summarize",
+            prices=config.metrics.prices,
             input={"document_id": document_id, "filename": filename},
         ) as callbacks:
             await db.update_status(document_id, DocumentStatus.SUMMARIZING)
@@ -167,8 +187,11 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
         # ------------------------------------------------------------------
         # Stage 5: compute folder similarity
         # ------------------------------------------------------------------
-        with tracer.step_span(
+        async with instrumented_stage(
+            tracer,
+            ctx["redis"],
             "compute_similarity",
+            prices=config.metrics.prices,
             input={"document_id": document_id, "doc_type": doc_type_name},
         ):
             await db.update_status(document_id, DocumentStatus.CLASSIFYING)
@@ -186,24 +209,29 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
         # ------------------------------------------------------------------
         # Stage 6: place in folder (LLM-agentic, under a global Redis lock)
         # ------------------------------------------------------------------
-        with tracer.step_span(
-            "place_in_folder",
-            input={"document_id": document_id, "doc_type": doc_type_name},
-        ) as callbacks:
-            async with folder_placement_lock(ctx["redis"], config.name):
-                await place_in_folder(
-                    document_id=document_id,
-                    summary=summary,
-                    doc_type=doc_type_name,
-                    extracted_values=values,
-                    votes=votes,
-                    db=db,
-                    analyzer=analyzer,
-                    allow_auto_create=llm_config.folder_placement.allow_auto_create,
-                    trace_callbacks=callbacks,
-                    similar=similar,
-                    events=events,
-                )
+        async with (
+            instrumented_stage(
+                tracer,
+                ctx["redis"],
+                "place_in_folder",
+                prices=config.metrics.prices,
+                input={"document_id": document_id, "doc_type": doc_type_name},
+            ) as callbacks,
+            folder_placement_lock(ctx["redis"], config.name),
+        ):
+            await place_in_folder(
+                document_id=document_id,
+                summary=summary,
+                doc_type=doc_type_name,
+                extracted_values=values,
+                votes=votes,
+                db=db,
+                analyzer=analyzer,
+                allow_auto_create=llm_config.folder_placement.allow_auto_create,
+                trace_callbacks=callbacks,
+                similar=similar,
+                events=events,
+            )
 
         # Mark ready before projecting so the projection + chunks carry the final
         # status (search status filters read the projection, not Postgres).
@@ -212,8 +240,11 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
         # ------------------------------------------------------------------
         # Stage 7: chunk, embed, and index
         # ------------------------------------------------------------------
-        with tracer.step_span(
+        async with instrumented_stage(
+            tracer,
+            ctx["redis"],
             "index_chunks",
+            prices=config.metrics.prices,
             input={"document_id": document_id},
         ):
             await index_chunks(
@@ -225,10 +256,15 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
                 embedder=embedder,
             )
 
+        with contextlib.suppress(Exception):
+            PIPELINE_DURATION.observe(time.perf_counter() - _run_start)
+            await record_ingest_result(ctx["redis"], "success")
         _log.info("ingest_complete", document_id=document_id)
     except SagaError as exc:
         await db.update_status(document_id, DocumentStatus.FAILED, error=str(exc))
         _log.error("ingest_failed", document_id=document_id, error=str(exc))
+        with contextlib.suppress(Exception):
+            await record_ingest_result(ctx["redis"], "failed")
         raise
     except asyncio.CancelledError:
         # ARQ cancels timed-out jobs via CancelledError (a BaseException in Python 3.11+,
@@ -240,11 +276,15 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
             error="Job cancelled: worker timeout or shutdown. Use re-analyze to retry.",
         )
         _log.warning("ingest_cancelled", document_id=document_id)
+        with contextlib.suppress(Exception):
+            await record_ingest_result(ctx["redis"], "failed")
         raise  # Let ARQ record the cancellation and apply max_tries logic.
     except Exception as exc:
         message = f"Unexpected error during ingestion: {exc}"
         await db.update_status(document_id, DocumentStatus.FAILED, error=message)
         _log.error("ingest_failed_unexpected", document_id=document_id, error=str(exc))
+        with contextlib.suppress(Exception):
+            await record_ingest_result(ctx["redis"], "failed")
         raise
     finally:
         tracer.finish()

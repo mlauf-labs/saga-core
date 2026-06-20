@@ -7,7 +7,10 @@ so the ingestion pipeline (Phases 3-5) has everything it needs.
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING, Any, ClassVar
+
+from prometheus_client import start_http_server
 
 from saga.chunking import MarkdownChunker
 from saga.converters import ConverterRegistry, load_converters_config
@@ -24,6 +27,7 @@ from saga.llm import (
     build_step_fallback_chat_models,
     load_llm_config,
 )
+from saga.metrics.registry import SAGA_REGISTRY
 from saga.ollama import (
     collect_required_ollama_models,
     ensure_ollama_models,
@@ -35,6 +39,8 @@ from saga.pipeline.tasks import index_document, ingest_document
 from saga.storage import MinioStore, OpenSearchStore, PostgresStore
 
 if TYPE_CHECKING:
+    from wsgiref.simple_server import WSGIServer
+
     from arq.connections import RedisSettings
 
     from saga.embeddings import EmbeddingProvider
@@ -42,9 +48,34 @@ if TYPE_CHECKING:
 _log = get_logger("saga.pipeline.worker")
 
 
+def start_metrics_server(*, port: int, enabled: bool) -> WSGIServer | None:
+    """Start the Prometheus metrics HTTP server for the worker process.
+
+    Returns the server handle (or ``None`` when disabled / on bind failure) so
+    metrics never prevent the worker from starting.
+    """
+    if not enabled:
+        return None
+    try:
+        server, _thread = start_http_server(port, registry=SAGA_REGISTRY)
+    except OSError as exc:
+        _log.error(
+            "metrics_server_bind_failed",
+            port=port,
+            error=str(exc),
+            hint="Set metrics.worker_port to a free port or disable metrics.enabled.",
+        )
+        return None
+    _log.info("metrics_server_started", port=port)
+    return server
+
+
 async def on_startup(ctx: dict[str, Any]) -> None:
     config = load_config()
     configure_logging()
+    ctx["metrics_server"] = start_metrics_server(
+        port=config.metrics.worker_port, enabled=config.metrics.enabled
+    )
     opensearch = OpenSearchStore(config.opensearch)
     db = PostgresStore(config.postgres)
     minio = MinioStore(config.minio)
@@ -109,6 +140,10 @@ async def on_startup(ctx: dict[str, Any]) -> None:
 
 
 async def on_shutdown(ctx: dict[str, Any]) -> None:
+    server = ctx.get("metrics_server")
+    if server is not None:
+        with contextlib.suppress(Exception):
+            server.shutdown()
     opensearch: OpenSearchStore | None = ctx.get("opensearch")
     if opensearch is not None:
         await opensearch.close()

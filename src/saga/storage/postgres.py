@@ -41,6 +41,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from saga.core.errors import ConflictError, NotFoundError, StorageError, ValidationError
 from saga.core.logging import get_logger
 from saga.core.models import (
+    ArchiveCounts,
     DocType,
     Document,
     DocumentStatus,
@@ -1214,6 +1215,117 @@ class PostgresStore:
             return []
         async with self._sessions()() as session:
             return await self._folder_member_doc_ids(session, folder_ids)
+
+    # ---------------------------- aggregates ------------------------------- #
+
+    async def aggregate_counts(self) -> ArchiveCounts:
+        """Compute inventory aggregates in a few grouped queries."""
+        async with self._sessions()() as session:
+            total = int(
+                (await session.execute(select(func.count()).select_from(DocumentRow))).scalar_one()
+            )
+            by_status = {
+                str(s): int(c)
+                for s, c in (
+                    await session.execute(
+                        select(DocumentRow.status, func.count()).group_by(DocumentRow.status)
+                    )
+                ).all()
+            }
+            by_mime = {
+                str(m): int(c)
+                for m, c in (
+                    await session.execute(
+                        select(DocumentRow.mime_type, func.count()).group_by(DocumentRow.mime_type)
+                    )
+                ).all()
+            }
+            doctype_counts = await self._doc_type_counts(session)
+            doctype_names = {
+                str(i): str(n)
+                for i, n in (await session.execute(select(DocTypeRow.id, DocTypeRow.name))).all()
+            }
+            by_doc_type = {doctype_names.get(i, i): c for i, c in doctype_counts.items()}
+            without_doc_type = int(
+                (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(DocumentRow)
+                        .where(DocumentRow.doc_type_id.is_(None))
+                    )
+                ).scalar_one()
+            )
+            members = select(DocumentFolderRow.document_id).distinct().subquery()
+            without_folder = int(
+                (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(DocumentRow)
+                        .where(DocumentRow.id.notin_(select(members.c.document_id)))
+                    )
+                ).scalar_one()
+            )
+            folders_total = int(
+                (await session.execute(select(func.count()).select_from(FolderRow))).scalar_one()
+            )
+            doc_types_total = int(
+                (await session.execute(select(func.count()).select_from(DocTypeRow))).scalar_one()
+            )
+            events_by_category = {
+                str(cat): int(c)
+                for cat, c in (
+                    await session.execute(
+                        select(EventRow.category, func.count()).group_by(EventRow.category)
+                    )
+                ).all()
+            }
+            doc_notes = int(
+                (
+                    await session.execute(select(func.count()).select_from(DocumentNoteRow))
+                ).scalar_one()
+            )
+            folder_notes = int(
+                (
+                    await session.execute(select(func.count()).select_from(FolderNoteRow))
+                ).scalar_one()
+            )
+            size_sum, size_max, size_avg = (
+                await session.execute(
+                    select(
+                        func.coalesce(func.sum(DocumentRow.size_bytes), 0),
+                        func.coalesce(func.max(DocumentRow.size_bytes), 0),
+                        func.coalesce(func.avg(DocumentRow.size_bytes), 0.0),
+                    )
+                )
+            ).one()
+        return ArchiveCounts(
+            documents_total=total,
+            documents_by_status=by_status,
+            documents_by_doc_type=by_doc_type,
+            documents_by_mime=by_mime,
+            documents_without_folder=without_folder,
+            documents_without_doc_type=without_doc_type,
+            folders_total=folders_total,
+            doc_types_total=doc_types_total,
+            events_by_category=events_by_category,
+            document_notes_total=doc_notes,
+            folder_notes_total=folder_notes,
+            size_bytes_sum=int(size_sum),
+            size_bytes_max=int(size_max),
+            size_bytes_avg=float(size_avg),
+        )
+
+    async def database_size_bytes(self) -> int | None:
+        """Total database size in bytes (Postgres only; None on other engines)."""
+        if self.engine.dialect.name != "postgresql":
+            return None
+        from sqlalchemy import text
+
+        async with self._sessions()() as session:
+            value = (
+                await session.execute(text("SELECT pg_database_size(current_database())"))
+            ).scalar_one()
+        return int(value)
 
     # ----------------------------- internals ------------------------------- #
 

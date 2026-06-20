@@ -269,6 +269,18 @@ class GenerationConfig(BaseModel):
     prompt_folder: str = ""
 
 
+class ModelPrice(BaseModel):
+    prompt_per_1k: float = 0.0
+    completion_per_1k: float = 0.0
+
+
+class MetricsConfig(BaseModel):
+    enabled: bool = True
+    worker_port: int = 9000
+    stuck_threshold_seconds: int = 3600
+    prices: dict[str, ModelPrice] = Field(default_factory=dict)
+
+
 class AppConfig(BaseModel):
     """Root application configuration assembled from the YAML files."""
 
@@ -288,6 +300,7 @@ class AppConfig(BaseModel):
     export: ExportConfig = Field(default_factory=ExportConfig)
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
     langfuse: LangfuseConfig = Field(default_factory=LangfuseConfig)
+    metrics: MetricsConfig = Field(default_factory=MetricsConfig)
 
 
 def _load_prompt_file(path: Path) -> str:
@@ -362,6 +375,7 @@ def load_config(config_dir: Path | str = "config") -> AppConfig:
         "export",
         "generation",
         "langfuse",
+        "metrics",
     ):
         if key in data:
             merged[key] = data[key]

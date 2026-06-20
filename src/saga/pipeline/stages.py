@@ -8,12 +8,15 @@ similarity -> place in folder(s) -> project + index chunks.
 
 from __future__ import annotations
 
+import contextlib
+import time
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Any
 
 from saga.core.errors import NotFoundError
 from saga.core.logging import get_logger
 from saga.core.models import Chunk, Event, EventCategory, EventType, ExtractedValue
+from saga.metrics.registry import CONVERTER_DURATION
 from saga.search.similarity import score_candidates, vote_folders
 from saga.storage.mappings import build_value_terms
 from saga.storage.postgres import ancestor_ids
@@ -51,9 +54,14 @@ async def convert_to_markdown(
         converter=converter.name,
         mime_type=document.mime_type,
     )
-    markdown = await converter.convert(
-        data=data, filename=document.filename, mime_type=document.mime_type
-    )
+    _t0 = time.perf_counter()
+    try:
+        markdown = await converter.convert(
+            data=data, filename=document.filename, mime_type=document.mime_type
+        )
+    finally:
+        with contextlib.suppress(Exception):
+            CONVERTER_DURATION.labels(converter=converter.name).observe(time.perf_counter() - _t0)
     await db.update_content(document_id, markdown)
     _log.info("conversion_done", document_id=document_id, chars=len(markdown))
     return markdown

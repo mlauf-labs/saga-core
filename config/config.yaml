@@ -130,5 +130,11 @@ langfuse:
   # Self-hosted: http://your-host:3000
   host: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
 
+metrics:
+  enabled: true
+  worker_port: 9000
+  stuck_threshold_seconds: 3600
+  prices: {}   # e.g. {"gpt-4o-mini": {prompt_per_1k: 0.15, completion_per_1k: 0.6}}
+
 logging:
   config_file: config/logging.yaml
