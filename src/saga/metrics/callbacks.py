@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 
 from langchain_core.callbacks import AsyncCallbackHandler
 
-from saga.core.logging import get_logger
 from saga.metrics.redis_aggregate import record_tokens
 from saga.metrics.registry import LLM_COST, LLM_TOKENS
 
@@ -15,7 +14,6 @@ if TYPE_CHECKING:
 
     from saga.core.config import ModelPrice
 
-_log = get_logger("saga.metrics.callbacks")
 _UNKNOWN = "unknown"
 
 
@@ -50,7 +48,7 @@ class PrometheusTokenCallback(AsyncCallbackHandler):
 
     def _model_from(self, serialized: dict[str, Any] | None, kwargs: dict[str, Any]) -> str:
         ser = serialized or {}
-        params = kwargs.get("invocation_params") or ser.get("invocation_params") or {}
+        params = kwargs.get("invocation_params") or {}
         metadata = kwargs.get("metadata") or {}
         return str(
             params.get("model")

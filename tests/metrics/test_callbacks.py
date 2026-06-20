@@ -17,7 +17,7 @@ async def test_callback_records_tokens_and_cost() -> None:
     prices = {"m": ModelPrice(prompt_per_1k=1.0, completion_per_1k=2.0)}
     cb = PrometheusTokenCallback("summarize", r, prices=prices)
     run_id = uuid4()
-    await cb.on_llm_start({"invocation_params": {"model": "m"}}, ["hi"], run_id=run_id)
+    await cb.on_llm_start({}, ["hi"], run_id=run_id, invocation_params={"model": "m"})
     # LLMResult-like object with usage on the generation message.
     usage = {"input_tokens": 1000, "output_tokens": 500}
     gen = SimpleNamespace(message=SimpleNamespace(usage_metadata=usage))
