@@ -6,7 +6,8 @@ from fastapi import APIRouter, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
 from pydantic import BaseModel
 
-from saga.api.dependencies import AuthDep, SnapshotDep
+from saga.api.dependencies import AuthDep, ServicesDep, SnapshotDep
+from saga.metrics.redis_aggregate import PipelineAggregates, read_pipeline_aggregates
 from saga.metrics.registry import SAGA_REGISTRY
 from saga.metrics.snapshot import Snapshot
 
@@ -26,19 +27,11 @@ G_DOCS_MIME = Gauge(
 )
 G_FOLDERS = Gauge("saga_folders_total", "Total folders.", registry=SAGA_REGISTRY)
 G_DOC_TYPES = Gauge("saga_doc_types_total", "Total doc-types.", registry=SAGA_REGISTRY)
-G_EVENTS = Gauge(
-    "saga_events_total", "Events by category.", ("category",), registry=SAGA_REGISTRY
-)
+G_EVENTS = Gauge("saga_events_total", "Events by category.", ("category",), registry=SAGA_REGISTRY)
 G_SIZE_SUM = Gauge("saga_document_size_bytes_sum", "Sum of document sizes.", registry=SAGA_REGISTRY)
-G_SIZE_MAX = Gauge(
-    "saga_document_size_bytes_max", "Largest document size.", registry=SAGA_REGISTRY
-)
-G_SIZE_AVG = Gauge(
-    "saga_document_size_bytes_avg", "Average document size.", registry=SAGA_REGISTRY
-)
-G_CHUNKS = Gauge(
-    "saga_chunks_total", "Total chunks in the vector index.", registry=SAGA_REGISTRY
-)
+G_SIZE_MAX = Gauge("saga_document_size_bytes_max", "Largest document size.", registry=SAGA_REGISTRY)
+G_SIZE_AVG = Gauge("saga_document_size_bytes_avg", "Average document size.", registry=SAGA_REGISTRY)
+G_CHUNKS = Gauge("saga_chunks_total", "Total chunks in the vector index.", registry=SAGA_REGISTRY)
 G_STORAGE = Gauge(
     "saga_storage_bytes", "Storage usage per backend.", ("backend",), registry=SAGA_REGISTRY
 )
@@ -47,6 +40,7 @@ G_QUEUE_DEPTH = Gauge("saga_queue_depth", "Pending ingestion jobs.", registry=SA
 
 class StatsResponse(BaseModel):
     snapshot: Snapshot
+    pipeline: PipelineAggregates
 
 
 router = APIRouter(tags=["statistics"], dependencies=[AuthDep])
@@ -54,9 +48,10 @@ metrics_router = APIRouter(tags=["statistics"])
 
 
 @router.get("/stats", response_model=StatsResponse, summary="Archive statistics snapshot")
-async def get_stats(snapshot: SnapshotDep) -> StatsResponse:
+async def get_stats(snapshot: SnapshotDep, services: ServicesDep) -> StatsResponse:
     snap: Snapshot = await snapshot.collect()
-    return StatsResponse(snapshot=snap)
+    pipeline = await read_pipeline_aggregates(services.queue)
+    return StatsResponse(snapshot=snap, pipeline=pipeline)
 
 
 def _refresh_gauges(snap: Snapshot) -> None:
