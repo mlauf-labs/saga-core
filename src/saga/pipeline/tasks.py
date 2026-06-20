@@ -209,13 +209,16 @@ async def ingest_document(ctx: dict[str, Any], document_id: str) -> None:
         # ------------------------------------------------------------------
         # Stage 6: place in folder (LLM-agentic, under a global Redis lock)
         # ------------------------------------------------------------------
-        async with instrumented_stage(
-            tracer,
-            ctx["redis"],
-            "place_in_folder",
-            prices=config.metrics.prices,
-            input={"document_id": document_id, "doc_type": doc_type_name},
-        ) as callbacks, folder_placement_lock(ctx["redis"], config.name):
+        async with (
+            instrumented_stage(
+                tracer,
+                ctx["redis"],
+                "place_in_folder",
+                prices=config.metrics.prices,
+                input={"document_id": document_id, "doc_type": doc_type_name},
+            ) as callbacks,
+            folder_placement_lock(ctx["redis"], config.name),
+        ):
             await place_in_folder(
                 document_id=document_id,
                 summary=summary,
