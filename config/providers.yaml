@@ -74,7 +74,7 @@ llm:
       # stream chunks). With streaming enabled, this is NOT the total generation
       # time — the connection stays alive as long as tokens keep arriving.
       # Increase for very slow hardware; decrease for fast cloud APIs.
-      request_timeout: 300.0
+      request_timeout: 900.0
       # Enables HTTP SSE streaming. Each received token resets the read timeout,
       # so slow local models can generate for minutes without a connection kill.
       # Set to false only if your proxy/load-balancer does not support SSE.
@@ -85,7 +85,7 @@ llm:
       base_url: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       temperature: 0.0
       max_output_tokens: ${LLM_MAX_OUTPUT_TOKENS:-}
-      request_timeout: 300.0
+      request_timeout: 900.0
       streaming: true
     azure:
       api_key: ${AZURE_OPENAI_API_KEY:-}
@@ -94,7 +94,7 @@ llm:
       deployment: ${AZURE_OPENAI_LLM_DEPLOYMENT:-}
       temperature: 0.0
       max_output_tokens: ${LLM_MAX_OUTPUT_TOKENS:-}
-      request_timeout: 300.0
+      request_timeout: 900.0
       streaming: true
 
 embeddings:
@@ -109,7 +109,9 @@ embeddings:
       api_key: ${OPENAI_API_KEY:-}
       model: ${OPENAI_EMBED_MODEL:-text-embedding-3-small}
       base_url: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
-      dimension: 1536
+      # Must equal opensearch.vector_dimension. Default 768 matches nomic-embed-text
+      # routed via the LiteLLM gateway; raise to 1536 for OpenAI text-embedding-3-small.
+      dimension: ${OPENAI_EMBED_DIMENSION:-768}
     azure:
       api_key: ${AZURE_OPENAI_API_KEY:-}
       endpoint: ${AZURE_OPENAI_ENDPOINT:-}
