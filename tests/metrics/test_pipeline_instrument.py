@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import fakeredis.aioredis
+from prometheus_client import generate_latest
 
 from saga.llm.tracing import noop_tracer
 from saga.metrics.callbacks import PrometheusTokenCallback
 from saga.metrics.pipeline import instrumented_stage, record_ingest_result
 from saga.metrics.redis_aggregate import read_pipeline_aggregates
 from saga.metrics.registry import SAGA_REGISTRY
-from prometheus_client import generate_latest
 
 
 async def test_instrumented_stage_times_and_yields_callbacks() -> None:
