@@ -290,3 +290,22 @@ class FolderVote(BaseModel):
 
     folder_id: str
     score: float
+
+
+class ArchiveCounts(BaseModel):
+    """Aggregate inventory counts over the relational system of record."""
+
+    documents_total: int = 0
+    documents_by_status: dict[str, int] = Field(default_factory=dict)
+    documents_by_doc_type: dict[str, int] = Field(default_factory=dict)
+    documents_by_mime: dict[str, int] = Field(default_factory=dict)
+    documents_without_folder: int = 0
+    documents_without_doc_type: int = 0
+    folders_total: int = 0
+    doc_types_total: int = 0
+    events_by_category: dict[str, int] = Field(default_factory=dict)
+    document_notes_total: int = 0
+    folder_notes_total: int = 0
+    size_bytes_sum: int = 0
+    size_bytes_max: int = 0
+    size_bytes_avg: float = 0.0
