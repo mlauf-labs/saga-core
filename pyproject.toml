@@ -41,6 +41,7 @@ dependencies = [
     "langfuse>=4.7.1",
     "langchain>=1.0",
     "python-dateutil>=2.9",
+    "prometheus-client>=0.25.0",
 ]
 
 [project.optional-dependencies]
