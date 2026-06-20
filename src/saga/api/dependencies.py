@@ -252,3 +252,13 @@ def require_auth(
 
 ServicesDep = Annotated[Services, Depends(get_services)]
 AuthDep = Depends(require_auth)
+
+
+def get_snapshot_service(request: Request) -> Any:  # noqa: ANN401 - SnapshotService
+    snap = getattr(request.app.state, "snapshot", None)
+    if snap is None:  # pragma: no cover - defensive
+        raise SagaError("Snapshot service is not initialised.")
+    return snap
+
+
+SnapshotDep = Annotated[Any, Depends(get_snapshot_service)]

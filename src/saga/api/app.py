@@ -18,12 +18,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from saga import __version__
 from saga.api.dependencies import Services
 from saga.api.errors import register_exception_handlers
-from saga.api.routes import doctypes, documents, export, folders, imports, llm, search, timeline
+from saga.api.routes import (
+    doctypes,
+    documents,
+    export,
+    folders,
+    imports,
+    llm,
+    search,
+    stats,
+    timeline,
+)
 from saga.core.config import AppConfig, load_config
 from saga.core.logging import configure_logging, get_logger
 from saga.embeddings import build_embedding_provider, load_embeddings_config
 from saga.events import EventRecorder, TimelineService
 from saga.llm import load_llm_config
+from saga.metrics.snapshot import SnapshotService
 from saga.ollama import (
     collect_required_ollama_models,
     ensure_ollama_models,
@@ -116,6 +127,7 @@ def create_app(config: AppConfig | None = None, services: Services | None = None
             events=events,
             timeline=timeline_service,
         )
+        app.state.snapshot = SnapshotService(db=db, opensearch=opensearch, minio=minio, redis=queue)
         # Ollama fleet visibility: remember the servers for /health and run a
         # check-only model verification in the background (the API must come up
         # immediately; the worker is the single authoritative model puller).
@@ -183,6 +195,8 @@ def create_app(config: AppConfig | None = None, services: Services | None = None
     app.include_router(imports.router)
     app.include_router(llm.router)
     app.include_router(timeline.router)
+    app.include_router(stats.router)
+    app.include_router(stats.metrics_router)
 
     @app.get("/health", tags=["system"])
     async def health() -> dict[str, Any]:
