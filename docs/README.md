@@ -5,6 +5,7 @@
 ## Using Saga
 - [Operations & deployment guide](operations.md) — run, scale, and harden the stack.
 - [Configuration reference](configuration.md) — every YAML/env setting.
+- [Metrics & monitoring](metrics.md) — Prometheus `/metrics` + JSON `/stats`, scrape config, metric reference.
 - [REST API reference](api/rest-api.md) — documents, folders, doc-types, notes, search, export.
 - [MCP tools reference](api/mcp-tools.md) — agent-facing search/browse + write tools.
 - [Backup & restore](api/backup.md) — export all documents to disk.
