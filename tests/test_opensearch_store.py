@@ -52,15 +52,23 @@ def _make_document() -> Document:
     )
 
 
+#: The kNN dimension the default config maps — live mappings must match it to be kept.
+_DIM = OpenSearchConfig().vector_dimension
+
+
 def _compatible_mapping(index: str, **_: Any) -> dict[str, Any]:
     """Return a mapping where the required kNN (and nested) fields are correctly typed."""
     if "chunk" in index:
-        return {index: {"mappings": {"properties": {"embedding": {"type": "knn_vector"}}}}}
+        return {
+            index: {
+                "mappings": {"properties": {"embedding": {"type": "knn_vector", "dimension": _DIM}}}
+            }
+        }
     return {
         index: {
             "mappings": {
                 "properties": {
-                    "summary_embedding": {"type": "knn_vector"},
+                    "summary_embedding": {"type": "knn_vector", "dimension": _DIM},
                     "metadata": {"type": "nested"},
                     "extracted_values": {"type": "nested"},
                 }
@@ -126,19 +134,22 @@ def test_client_lazy_build() -> None:
 async def test_bootstrap_creates_both_indices(
     store: OpenSearchStore, fake_client: MagicMock
 ) -> None:
-    await store.bootstrap()
+    fresh = await store.bootstrap()
     assert fake_client.indices.create.await_count == 2
     created = {call.kwargs["index"] for call in fake_client.indices.create.await_args_list}
     assert created == {store._config.document_index, store._config.chunk_index}
+    # both indices start empty — callers can warn / trigger a rebuild.
+    assert set(fresh) == created
 
 
 async def test_bootstrap_skips_existing_compatible_indices(
     store: OpenSearchStore, fake_client: MagicMock
 ) -> None:
     fake_client.indices.exists = AsyncMock(return_value=True)
-    await store.bootstrap()
+    fresh = await store.bootstrap()
     fake_client.indices.create.assert_not_awaited()
     fake_client.indices.delete.assert_not_awaited()
+    assert fresh == []
 
 
 async def test_bootstrap_recreates_index_missing_knn_field(
@@ -189,6 +200,35 @@ async def test_bootstrap_recreates_index_with_non_nested_metadata(
     assert fake_client.indices.delete.await_args.kwargs["index"] == store._config.document_index
     fake_client.indices.create.assert_awaited_once()
     assert fake_client.indices.create.await_args.kwargs["index"] == store._config.document_index
+
+
+async def test_bootstrap_recreates_index_on_dimension_drift(
+    store: OpenSearchStore, fake_client: MagicMock
+) -> None:
+    # Correct knn_vector TYPE but a stale dimension (embedding model changed): every
+    # vector write would fail, so the index must be recreated with the new mapping.
+    fake_client.indices.exists = AsyncMock(return_value=True)
+
+    def _mapping(index: str, **_: Any) -> dict[str, Any]:
+        if index == store._config.document_index:
+            return {
+                index: {
+                    "mappings": {
+                        "properties": {
+                            "summary_embedding": {"type": "knn_vector", "dimension": _DIM + 1},
+                            "metadata": {"type": "nested"},
+                            "extracted_values": {"type": "nested"},
+                        }
+                    }
+                }
+            }
+        return _compatible_mapping(index)
+
+    fake_client.indices.get_mapping = AsyncMock(side_effect=_mapping)
+    fresh = await store.bootstrap()
+    fake_client.indices.delete.assert_awaited_once()
+    assert fake_client.indices.delete.await_args.kwargs["index"] == store._config.document_index
+    assert fresh == [store._config.document_index]
 
 
 async def test_bootstrap_wraps_errors(store: OpenSearchStore, fake_client: MagicMock) -> None:

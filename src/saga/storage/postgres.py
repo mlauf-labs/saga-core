@@ -798,6 +798,26 @@ class PostgresStore:
             row = await session.get(DocumentRow, document_id)
             return list(row.summary_embedding) if row and row.summary_embedding else None
 
+    async def get_summary_embeddings(self, document_ids: list[str]) -> dict[str, list[float]]:
+        """Return {document_id: stored summary embedding}; ids without one are omitted."""
+        if not document_ids:
+            return {}
+        async with self._sessions()() as session:
+            rows = (
+                await session.execute(
+                    select(DocumentRow.id, DocumentRow.summary_embedding).where(
+                        DocumentRow.id.in_(document_ids)
+                    )
+                )
+            ).all()
+            return {row[0]: list(row[1]) for row in rows if row[1]}
+
+    async def document_ids(self) -> set[str]:
+        """Return the ids of every stored document (projection reconciliation)."""
+        async with self._sessions()() as session:
+            rows = (await session.execute(select(DocumentRow.id))).scalars()
+            return set(rows)
+
     async def update_document(
         self,
         document_id: str,

@@ -125,7 +125,16 @@ async def on_startup(ctx: dict[str, Any]) -> None:
         )
     events = EventRecorder(db, rationale_top_n=config.timeline.rationale_top_n)
     await db.bootstrap()
-    await opensearch.bootstrap()
+    recreated = await opensearch.bootstrap()
+    if recreated:
+        _log.warning(
+            "search_indices_recreated_empty",
+            indices=recreated,
+            hint=(
+                "Search returns no results for these until rebuilt: run saga-reproject "
+                "for the document index; re-analyse documents to restore chunks."
+            ),
+        )
     await minio.bootstrap()
     ctx["config"] = config
     ctx["llm_config"] = llm_config

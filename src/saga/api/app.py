@@ -109,7 +109,16 @@ def create_app(config: AppConfig | None = None, services: Services | None = None
             rrf_k=cfg.opensearch.rrf_k,
         )
         await db.bootstrap()
-        await opensearch.bootstrap()
+        recreated = await opensearch.bootstrap()
+        if recreated:
+            _log.warning(
+                "search_indices_recreated_empty",
+                indices=recreated,
+                hint=(
+                    "Search returns no results for these until rebuilt: run saga-reproject "
+                    "for the document index; re-analyse documents to restore chunks."
+                ),
+            )
         await minio.bootstrap()
         events = EventRecorder(db, rationale_top_n=cfg.timeline.rationale_top_n)
         timeline_service = TimelineService(
