@@ -7,6 +7,13 @@ generated from the commit history (see `cliff.toml` and the release workflow).
 ## [Unreleased]
 
 ### Features
+- **scripts**: `saga-reproject` rebuilds the OpenSearch document projection from Postgres —
+  id-cursor pagination, per-page bulk indexing with one final refresh, per-document error
+  isolation (poison documents are skipped and reported, non-zero exit), stale-projection
+  cleanup, and a loud warning when `bootstrap` had to recreate the (non-rebuildable) chunk
+  index. Index drift repair now also recreates indices whose kNN dimension no longer
+  matches `opensearch.vector_dimension`, and API/worker startup warns with a
+  `saga-reproject` hint when an index was recreated empty.
 - **api/mcp/search**: documents carry a free-form, searchable `metadata` string map — edit via
   `PATCH /documents/{id}` and the `update_document_metadata` MCP tool; full-text + exact filter
   via `/documents/search` and `/search` (the `metadata` map). Round-trips through OKF as

@@ -30,6 +30,7 @@ from saga.core.models import (
     HybridSearchResult,
     SearchResultItem,
 )
+from saga.storage.opensearch import ProjectionRecord
 from saga.storage.postgres import PostgresStore
 
 if TYPE_CHECKING:
@@ -104,6 +105,21 @@ class InMemoryProjection:
 
     async def delete_document(self, document_id: str) -> None:
         self.projected.pop(document_id, None)
+
+    async def project_documents(self, records: list[ProjectionRecord]) -> list[str]:
+        for record in records:
+            await self.project_document(
+                record.document,
+                folder_ancestor_ids=record.folder_ancestor_ids,
+                summary_embedding=record.summary_embedding,
+            )
+        return []
+
+    async def document_ids(self) -> set[str]:
+        return set(self.projected)
+
+    async def refresh_documents(self) -> None:
+        return None
 
 
 class FakeSearch:

@@ -8,11 +8,12 @@ similarity) and the ``document_chunks`` kNN index. It is never the source of tru
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
 from opensearchpy import AsyncOpenSearch
-from opensearchpy.helpers import async_bulk
+from opensearchpy.helpers import async_bulk, async_scan
 
 from saga.core.errors import StorageError
 from saga.core.logging import get_logger
@@ -39,6 +40,15 @@ if TYPE_CHECKING:
     from saga.core.models import Document
 
 _log = get_logger("saga.storage.opensearch")
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectionRecord:
+    """One document's projection inputs for a bulk write (``project_documents``)."""
+
+    document: Document
+    folder_ancestor_ids: list[str]
+    summary_embedding: list[float] | None = None
 
 
 def _parse_hosts(hosts: str) -> list[dict[str, Any]]:
@@ -84,27 +94,36 @@ class OpenSearchStore:
             )
         return self._client
 
-    async def bootstrap(self) -> None:
+    async def bootstrap(self) -> list[str]:
         """Create both projection indices, repairing an incompatible existing mapping.
 
         OpenSearch is a rebuildable projection, so if an existing index has a stale
-        mapping — a required ``knn_vector`` field missing (e.g. an index created before
-        ``summary_embedding`` existed), or a field that must be ``nested`` (``metadata``,
-        ``extracted_values``) not mapped as such — the index is dropped and recreated with
-        the current mapping. The projection must then be rebuilt from Postgres on the next
-        ingest/update; the SoR is unaffected.
+        mapping — a required ``knn_vector`` field missing or with the wrong dimension
+        (e.g. after ``opensearch.vector_dimension`` changed for a new embedding model),
+        or a field that must be ``nested`` (``metadata``, ``extracted_values``) not
+        mapped as such — the index is dropped and recreated with the current mapping.
+        The projection must then be rebuilt from Postgres (``saga-reproject`` for the
+        document index; re-analysis for chunks); the SoR is unaffected.
+
+        Returns the names of indices that were created or recreated and therefore start
+        empty, so callers can warn or trigger a rebuild instead of serving silently
+        empty search results.
         """
-        await self._ensure_index(
+        fresh: list[str] = []
+        if await self._ensure_index(
             self._config.document_index,
             document_index_body(self._config),
             knn_fields=("summary_embedding",),
             nested_fields=("metadata", "extracted_values"),
-        )
-        await self._ensure_index(
+        ):
+            fresh.append(self._config.document_index)
+        if await self._ensure_index(
             self._config.chunk_index,
             chunk_index_body(self._config),
             knn_fields=("embedding",),
-        )
+        ):
+            fresh.append(self._config.chunk_index)
+        return fresh
 
     async def _ensure_index(
         self,
@@ -113,52 +132,62 @@ class OpenSearchStore:
         *,
         knn_fields: tuple[str, ...] = (),
         nested_fields: tuple[str, ...] = (),
-    ) -> None:
+    ) -> bool:
+        """Create ``name`` (or recreate it on mapping drift); True if it now starts empty."""
         try:
             if not await self.client.indices.exists(index=name):
                 await self.client.indices.create(index=name, body=body)
                 _log.info("index_created", index=name)
-                return
-            missing = await self._incompatible_fields(name, knn_fields, nested_fields)
+                return True
+            missing = await self._incompatible_fields(name, body, knn_fields, nested_fields)
             if missing:
                 _log.warning("index_mapping_incompatible_recreating", index=name, fields=missing)
                 await self.client.indices.delete(index=name)
                 await self.client.indices.create(index=name, body=body)
                 _log.info("index_recreated", index=name)
+                return True
+            return False
         except StorageError:
             raise
         except Exception as exc:
             raise StorageError(f"Failed to create OpenSearch index '{name}': {exc}") from exc
 
     async def _incompatible_fields(
-        self, name: str, knn_fields: tuple[str, ...], nested_fields: tuple[str, ...]
+        self,
+        name: str,
+        desired_body: dict[str, Any],
+        knn_fields: tuple[str, ...],
+        nested_fields: tuple[str, ...],
     ) -> list[str]:
-        """Return required fields whose live mapping type is wrong (or absent).
+        """Return required fields whose live mapping is wrong (or absent).
 
-        A kNN field must be ``knn_vector``; a nested field must be ``nested``. A field
-        absent from the live mapping counts as incompatible — that is the stale-index
-        case (e.g. ``metadata`` created before it became a nested field).
+        A kNN field must be ``knn_vector`` **with the dimension the desired mapping
+        specifies** (a stale dimension after an embedding-model change makes every
+        vector write fail); a nested field must be ``nested``. A field absent from the
+        live mapping counts as incompatible — that is the stale-index case (e.g.
+        ``metadata`` created before it became a nested field).
         """
         if not knn_fields and not nested_fields:
             return []
+        desired: dict[str, Any] = desired_body.get("mappings", {}).get("properties", {})
         mapping = await self.client.indices.get_mapping(index=name)
         properties: dict[str, Any] = mapping.get(name, {}).get("mappings", {}).get("properties", {})
-        bad = [f for f in knn_fields if properties.get(f, {}).get("type") != "knn_vector"]
+        bad = [
+            f
+            for f in knn_fields
+            if properties.get(f, {}).get("type") != "knn_vector"
+            or properties.get(f, {}).get("dimension") != desired.get(f, {}).get("dimension")
+        ]
         bad += [f for f in nested_fields if properties.get(f, {}).get("type") != "nested"]
         return bad
 
-    async def project_document(
+    def _document_source(
         self,
         document: Document,
-        *,
         folder_ancestor_ids: list[str],
-        summary_embedding: list[float] | None = None,
-    ) -> None:
-        """Create or replace the search projection of a document.
-
-        The projection denormalises folder membership (direct + ancestors) and,
-        when available, the summary embedding used for document-level similarity.
-        """
+        summary_embedding: list[float] | None,
+    ) -> dict[str, Any]:
+        """Build the projection ``_source`` — the single place that decides its fields."""
         source: dict[str, Any] = {
             "document_id": document.document_id,
             "title": document.title,
@@ -184,6 +213,21 @@ class OpenSearchStore:
         }
         if summary_embedding is not None:
             source["summary_embedding"] = summary_embedding
+        return source
+
+    async def project_document(
+        self,
+        document: Document,
+        *,
+        folder_ancestor_ids: list[str],
+        summary_embedding: list[float] | None = None,
+    ) -> None:
+        """Create or replace the search projection of a document.
+
+        The projection denormalises folder membership (direct + ancestors) and,
+        when available, the summary embedding used for document-level similarity.
+        """
+        source = self._document_source(document, folder_ancestor_ids, summary_embedding)
         try:
             await self.client.index(
                 index=self._config.document_index,
@@ -194,6 +238,67 @@ class OpenSearchStore:
         except Exception as exc:
             raise StorageError(
                 f"Failed to project document '{document.document_id}': {exc}"
+            ) from exc
+
+    async def project_documents(self, records: list[ProjectionRecord]) -> list[str]:
+        """Bulk create/replace projections without a per-write refresh (bulk rebuilds).
+
+        Returns the ids whose projection was REJECTED by the index (e.g. a malformed
+        field), so callers can skip and report them instead of aborting a whole rebuild;
+        transport-level failures still raise. Writes become visible to search after
+        ``refresh_documents``.
+        """
+        if not records:
+            return []
+        actions = [
+            {
+                "_op_type": "index",
+                "_index": self._config.document_index,
+                "_id": record.document.document_id,
+                "_source": self._document_source(
+                    record.document, record.folder_ancestor_ids, record.summary_embedding
+                ),
+            }
+            for record in records
+        ]
+        try:
+            _, errors = await async_bulk(
+                self.client, actions, refresh=False, raise_on_error=False, stats_only=False
+            )
+        except Exception as exc:
+            raise StorageError(f"Failed to bulk-project {len(records)} documents: {exc}") from exc
+        failed: list[str] = []
+        for error in errors if isinstance(errors, list) else []:
+            detail: dict[str, Any] = error.get("index", {}) if isinstance(error, dict) else {}
+            document_id = str(detail.get("_id", "unknown"))
+            failed.append(document_id)
+            _log.warning(
+                "project_document_rejected", document_id=document_id, error=str(detail.get("error"))
+            )
+        return failed
+
+    async def document_ids(self) -> set[str]:
+        """Return the ids of every document currently in the document index."""
+        ids: set[str] = set()
+        try:
+            async for hit in async_scan(
+                self.client,
+                index=self._config.document_index,
+                query={"query": {"match_all": {}}},
+                _source=False,
+            ):
+                ids.add(str(hit["_id"]))
+        except Exception as exc:
+            raise StorageError(f"Failed to scan document ids: {exc}") from exc
+        return ids
+
+    async def refresh_documents(self) -> None:
+        """Make pending document-index writes (``project_documents``) searchable."""
+        try:
+            await self.client.indices.refresh(index=self._config.document_index)
+        except Exception as exc:
+            raise StorageError(
+                f"Failed to refresh index '{self._config.document_index}': {exc}"
             ) from exc
 
     async def index_chunks(self, chunks: list[Chunk]) -> int:

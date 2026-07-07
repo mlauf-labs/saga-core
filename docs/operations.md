@@ -141,9 +141,20 @@ Use `saga-backup` to export everything to a directory tree — see
 system of record) and the MinIO bucket; the OpenSearch projection can be rebuilt from
 those, but snapshotting the indices speeds recovery.
 
+To rebuild the projection, run **`saga-reproject`** (same image/environment as the
+API): it repairs drifted mappings, re-projects every document from Postgres using the
+stored summary embeddings (no LLM/embedding calls), and removes stale projections. It
+rebuilds the **document** index only — chunk vectors exist solely in OpenSearch, so
+after losing the chunk index re-analyse the affected documents
+(`POST /documents/{id}/reanalyze`).
+
 ## Changing the embedding model
 
 The kNN dimension is fixed at index creation and must match the embedding model
 (FR-27). To change models: update `providers.yaml` + `opensearch.vector_dimension`,
-create fresh indices (or a new alias), and re-ingest / reindex. A mismatch is logged
-as a warning at worker startup.
+then restart — `bootstrap` detects the dimension drift and recreates the indices with
+the new mapping (they start empty; startup logs `search_indices_recreated_empty`).
+Run `saga-reproject` to repopulate the document index (stored embeddings with the old
+dimension are omitted and counted), then re-analyse documents to re-embed summaries
+and chunks with the new model. A mismatch between the embedder and
+`opensearch.vector_dimension` is logged as a warning at worker startup.

@@ -335,6 +335,11 @@ async def index_document(ctx: dict[str, Any], document_id: str) -> None:
     if document.summary:
         vectors = await embedder.embed([document.summary])
         summary_vector = vectors[0] if vectors else []
+        if summary_vector:
+            # Persist the vector: stored-embedding rebuilds (saga-reproject) can only
+            # keep a document's similarity vector if Postgres has it — imported
+            # documents arrive without one.
+            await db.update_summary(document_id, document.summary, embedding=summary_vector)
 
     await index_chunks(
         document_id=document_id,
